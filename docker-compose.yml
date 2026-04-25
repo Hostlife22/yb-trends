@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   api:
-    build: .
+    build: ./apps/api
     ports:
       - "8000:8000"
     environment:
@@ -13,7 +13,7 @@ services:
       - trends_data:/data
 
   sync:
-    build: .
+    build: ./apps/api
     command: ["python", "-m", "scripts.run_sync", "--region", "US", "--period", "7d"]
     environment:
       YBT_GOOGLE_PROVIDER: mock
@@ -21,6 +21,13 @@ services:
     volumes:
       - trends_data:/data
     profiles: ["manual-sync"]
+
+  dashboard:
+    build: ./apps/dashboard
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
 
 volumes:
   trends_data:

@@ -1,10 +1,28 @@
-.PHONY: test sync run
+# ── API ──────────────────────────────────────────
+api-install:
+	pip install -r apps/api/requirements.txt
 
-test:
-	pytest -q
+api-run:
+	cd apps/api && uvicorn app.main:app --reload
 
-sync:
-	python -m scripts.run_sync --region US --period 7d
+api-test:
+	cd apps/api && pytest -q
 
-run:
-	uvicorn app.main:app --reload
+api-sync:
+	cd apps/api && python -m scripts.run_sync --region US --period 7d
+
+# ── Dashboard ───────────────────────────────────
+dash-install:
+	cd apps/dashboard && npm install
+
+dash-dev:
+	cd apps/dashboard && npm run dev
+
+dash-build:
+	cd apps/dashboard && npm run build
+
+# ── All ─────────────────────────────────────────
+install: api-install dash-install
+
+dev:
+	$(MAKE) api-run & $(MAKE) dash-dev
