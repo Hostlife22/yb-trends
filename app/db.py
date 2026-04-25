@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from app.config import settings
-from app.schemas.trends import ClassifiedTrendItem
+from app.schemas.trends import ClassifiedTrendItem, TrendPoint
 
 
 @dataclass
@@ -42,36 +42,63 @@ class TrendRepository:
 
     def _init_db(self) -> None:
         with self._connect() as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS trend_items (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    query TEXT NOT NULL,
-                    region TEXT NOT NULL,
-                    period TEXT NOT NULL,
-                    title_normalized TEXT NOT NULL,
-                    content_type TEXT NOT NULL,
-                    is_movie_or_animation INTEGER NOT NULL,
-                    confidence REAL NOT NULL,
-                    interest_level REAL NOT NULL,
-                    growth_velocity REAL NOT NULL,
-                    final_score REAL NOT NULL,
-                    reason TEXT NOT NULL,
-                    raw_payload TEXT NOT NULL,
-                    created_at TEXT NOT NULL
-                )
-                """
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS sync_locks (
-                    lock_key TEXT PRIMARY KEY,
-                    owner_id TEXT NOT NULL,
-                    acquired_at TEXT NOT NULL,
-                    expires_at TEXT NOT NULL
-                )
-                """
-            )
+            conn.execute("CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY)")
+            applied = {row["version"] for row in conn.execute("SELECT version FROM schema_migrations").fetchall()}
+
+            migrations: list[tuple[int, str]] = [
+                (
+                    1,
+                    """
+                    CREATE TABLE IF NOT EXISTS trend_items (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        query TEXT NOT NULL,
+                        region TEXT NOT NULL,
+                        period TEXT NOT NULL,
+                        title_normalized TEXT NOT NULL,
+                        content_type TEXT NOT NULL,
+                        is_movie_or_animation INTEGER NOT NULL,
+                        confidence REAL NOT NULL,
+                        interest_level REAL NOT NULL,
+                        growth_velocity REAL NOT NULL,
+                        final_score REAL NOT NULL,
+                        reason TEXT NOT NULL,
+                        raw_payload TEXT NOT NULL,
+                        created_at TEXT NOT NULL
+                    );
+                    """,
+                ),
+                (
+                    2,
+                    """
+                    CREATE TABLE IF NOT EXISTS sync_locks (
+                        lock_key TEXT PRIMARY KEY,
+                        owner_id TEXT NOT NULL,
+                        acquired_at TEXT NOT NULL,
+                        expires_at TEXT NOT NULL
+                    );
+                    """,
+                ),
+                (
+                    3,
+                    """
+                    CREATE TABLE IF NOT EXISTS trend_points (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        query TEXT NOT NULL,
+                        region TEXT NOT NULL,
+                        period TEXT NOT NULL,
+                        timestamp TEXT NOT NULL,
+                        interest REAL NOT NULL,
+                        created_at TEXT NOT NULL
+                    );
+                    """,
+                ),
+            ]
+
+            for version, sql in migrations:
+                if version in applied:
+                    continue
+                conn.executescript(sql)
+                conn.execute("INSERT INTO schema_migrations(version) VALUES (?)", (version,))
 
     def acquire_lock(self, lock_key: str, owner_id: str, ttl_seconds: int) -> bool:
         now = datetime.now(timezone.utc)
@@ -105,7 +132,13 @@ class TrendRepository:
                 (lock_key, owner_id),
             )
 
-    def save_snapshot(self, region: str, period: str, items: list[ClassifiedTrendItem]) -> int:
+    def save_snapshot(
+        self,
+        region: str,
+        period: str,
+        items: list[ClassifiedTrendItem],
+        raw_series_by_query: dict[str, list[TrendPoint]] | None = None,
+    ) -> int:
         now = datetime.now(timezone.utc).isoformat()
         with self._connect() as conn:
             for item in items:
@@ -133,6 +166,16 @@ class TrendRepository:
                         now,
                     ),
                 )
+
+                if raw_series_by_query and item.query in raw_series_by_query:
+                    for point in raw_series_by_query[item.query]:
+                        conn.execute(
+                            """
+                            INSERT INTO trend_points (query, region, period, timestamp, interest, created_at)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                            """,
+                            (item.query, region, period, point.timestamp.isoformat(), point.interest, now),
+                        )
         return len(items)
 
     def fetch_latest_snapshot_meta(self, region: str, period: str) -> SnapshotMeta | None:

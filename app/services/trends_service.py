@@ -40,8 +40,14 @@ class TrendsService:
         start = datetime.now(timezone.utc)
         try:
             raw_items = self.provider.fetch_weekly_trends(region)
+            raw_series = {item.query: item.series for item in raw_items}
             classified = [self.classifier.classify(item) for item in raw_items]
-            saved = self.repository.save_snapshot(region=region, period=period, items=classified)
+            saved = self.repository.save_snapshot(
+                region=region,
+                period=period,
+                items=classified,
+                raw_series_by_query=raw_series,
+            )
             duration_ms = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
             logger.info(
                 "sync_completed",

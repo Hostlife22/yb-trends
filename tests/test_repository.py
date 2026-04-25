@@ -3,7 +3,7 @@ import pytest
 pytest.importorskip("pydantic")
 
 from app.db import TrendRepository
-from app.schemas.trends import ClassifiedTrendItem
+from app.schemas.trends import ClassifiedTrendItem, TrendPoint
 
 
 def test_repository_save_and_fetch(tmp_path) -> None:
@@ -20,7 +20,14 @@ def test_repository_save_and_fetch(tmp_path) -> None:
         final_score=46,
     )
 
-    saved = repo.save_snapshot(region="US", period="7d", items=[item])
+    saved = repo.save_snapshot(
+        region="US",
+        period="7d",
+        items=[item],
+        raw_series_by_query={
+            "minecraft movie trailer": [TrendPoint(timestamp="2026-01-01T00:00:00Z", interest=10)]
+        },
+    )
     assert saved == 1
 
     out = repo.fetch_latest_top(region="US", period="7d", limit=10)
