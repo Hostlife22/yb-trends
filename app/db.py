@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from app.config import settings
@@ -61,6 +61,48 @@ class TrendRepository:
                     created_at TEXT NOT NULL
                 )
                 """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS sync_locks (
+                    lock_key TEXT PRIMARY KEY,
+                    owner_id TEXT NOT NULL,
+                    acquired_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL
+                )
+                """
+            )
+
+    def acquire_lock(self, lock_key: str, owner_id: str, ttl_seconds: int) -> bool:
+        now = datetime.now(timezone.utc)
+        expires_at = now + timedelta(seconds=ttl_seconds)
+
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT owner_id, expires_at FROM sync_locks WHERE lock_key = ?",
+                (lock_key,),
+            ).fetchone()
+
+            if row is not None:
+                existing_expires = datetime.fromisoformat(row["expires_at"])
+                if existing_expires > now:
+                    return False
+                conn.execute("DELETE FROM sync_locks WHERE lock_key = ?", (lock_key,))
+
+            conn.execute(
+                """
+                INSERT INTO sync_locks (lock_key, owner_id, acquired_at, expires_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (lock_key, owner_id, now.isoformat(), expires_at.isoformat()),
+            )
+            return True
+
+    def release_lock(self, lock_key: str, owner_id: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "DELETE FROM sync_locks WHERE lock_key = ? AND owner_id = ?",
+                (lock_key, owner_id),
             )
 
     def save_snapshot(self, region: str, period: str, items: list[ClassifiedTrendItem]) -> int:

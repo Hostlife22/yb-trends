@@ -32,3 +32,11 @@ def test_repository_snapshot_meta(tmp_path) -> None:
     repo = TrendRepository(db_path=str(tmp_path / "trends.db"))
     meta = repo.fetch_latest_snapshot_meta(region="US", period="7d")
     assert meta is None
+
+
+def test_lock_acquire_release(tmp_path) -> None:
+    repo = TrendRepository(db_path=str(tmp_path / "trends.db"))
+    assert repo.acquire_lock("sync:US:7d", "owner-a", ttl_seconds=60)
+    assert not repo.acquire_lock("sync:US:7d", "owner-b", ttl_seconds=60)
+    repo.release_lock("sync:US:7d", "owner-a")
+    assert repo.acquire_lock("sync:US:7d", "owner-b", ttl_seconds=60)

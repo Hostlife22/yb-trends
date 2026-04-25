@@ -19,12 +19,14 @@ scheduler = SyncScheduler(service=get_trends_service())
 
 @app.on_event("startup")
 def on_startup() -> None:
-    scheduler.start()
+    if settings.enable_inprocess_scheduler:
+        scheduler.start()
 
 
 @app.on_event("shutdown")
 def on_shutdown() -> None:
-    scheduler.stop()
+    if settings.enable_inprocess_scheduler:
+        scheduler.stop()
 
 
 @app.get("/health")

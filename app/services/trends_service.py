@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import datetime, timedelta, timezone
 
 from app.config import settings
@@ -28,22 +29,33 @@ class TrendsService:
         self.cache = cache or TTLCache(ttl_seconds=600)
 
     def sync(self, region: str, period: str) -> int:
+        owner_id = str(uuid.uuid4())
+        lock_key = f"sync:{region}:{period}"
+        lock_acquired = self.repository.acquire_lock(lock_key=lock_key, owner_id=owner_id, ttl_seconds=settings.lock_ttl_seconds)
+
+        if not lock_acquired:
+            logger.warning("sync_skipped_lock_not_acquired", extra={"region": region, "period": period})
+            return 0
+
         start = datetime.now(timezone.utc)
-        raw_items = self.provider.fetch_weekly_trends(region)
-        classified = [self.classifier.classify(item) for item in raw_items]
-        saved = self.repository.save_snapshot(region=region, period=period, items=classified)
-        duration_ms = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
-        logger.info(
-            "sync_completed",
-            extra={
-                "region": region,
-                "period": period,
-                "saved": saved,
-                "duration_ms": duration_ms,
-                "provider": type(self.provider).__name__,
-            },
-        )
-        return saved
+        try:
+            raw_items = self.provider.fetch_weekly_trends(region)
+            classified = [self.classifier.classify(item) for item in raw_items]
+            saved = self.repository.save_snapshot(region=region, period=period, items=classified)
+            duration_ms = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
+            logger.info(
+                "sync_completed",
+                extra={
+                    "region": region,
+                    "period": period,
+                    "saved": saved,
+                    "duration_ms": duration_ms,
+                    "provider": type(self.provider).__name__,
+                },
+            )
+            return saved
+        finally:
+            self.repository.release_lock(lock_key=lock_key, owner_id=owner_id)
 
     def _is_snapshot_fresh(self, region: str, period: str) -> bool:
         meta = self.repository.fetch_latest_snapshot_meta(region=region, period=period)

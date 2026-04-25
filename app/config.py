@@ -19,6 +19,12 @@ class Settings(BaseSettings):
 
     sync_interval_seconds: int = Field(default=21600, description="Background sync interval")
     max_snapshot_age_seconds: int = Field(default=43200, description="Data freshness threshold")
+    lock_ttl_seconds: int = Field(default=1200, description="Sync lock TTL")
+
+    enable_inprocess_scheduler: bool = Field(
+        default=False,
+        description="Enable in-process scheduler. Keep false in production and use external scheduler.",
+    )
 
     model_config = SettingsConfigDict(env_prefix="YBT_", env_file=".env", extra="ignore")
 
