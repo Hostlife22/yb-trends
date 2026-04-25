@@ -86,3 +86,16 @@ def test_sync_runs_and_metrics_contract(tmp_path) -> None:
     assert "latest_sync_quality_passed" in metrics
     assert "sync_runs_last_24h" in metrics
     assert "quality_failures_last_24h" in metrics
+
+
+def test_prometheus_metrics_endpoint(tmp_path) -> None:
+    _configure_test_settings(tmp_path)
+    client = TestClient(app)
+
+    client.post("/api/v1/admin/sync")
+    resp = client.get("/metrics")
+    assert resp.status_code == 200
+    body = resp.text
+    assert "yb_sync_runs_total" in body
+    assert "yb_quality_failures_total" in body
+    assert "yb_latest_snapshot_age_seconds" in body

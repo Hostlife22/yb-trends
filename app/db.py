@@ -196,6 +196,19 @@ class TrendRepository:
         failures = int(row["failures"] or 0)
         return total, failures
 
+    def count_sync_runs_total(self, region: str, period: str) -> tuple[int, int]:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT COUNT(*) AS total,
+                       SUM(CASE WHEN quality_passed = 0 THEN 1 ELSE 0 END) AS failures
+                FROM sync_runs
+                WHERE region = ? AND period = ?
+                """,
+                (region, period),
+            ).fetchone()
+        return int(row["total"] or 0), int(row["failures"] or 0)
+
     def acquire_lock(self, lock_key: str, owner_id: str, ttl_seconds: int) -> bool:
         now = datetime.now(timezone.utc)
         expires_at = now + timedelta(seconds=ttl_seconds)
