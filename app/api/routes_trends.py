@@ -5,8 +5,8 @@ from app.config import settings
 from app.db import TrendRepository
 from app.schemas.trends import SummaryResponse, TopTrendsResponse
 from app.services.cache import TTLCache
-from app.services.trends_service import TrendsService
 from app.services.providers.factory import build_trends_provider
+from app.services.trends_service import TrendsService
 
 router = APIRouter(prefix="/api/v1", tags=["trends"])
 
@@ -26,6 +26,16 @@ def sync_trends(
 ) -> dict[str, int | str]:
     count = service.sync(region=region, period=period)
     return {"status": "ok", "saved": count}
+
+
+@router.get("/admin/freshness", dependencies=[Depends(verify_api_key)])
+def check_freshness(
+    region: str = Query(default=settings.default_region),
+    period: str = Query(default=settings.default_period),
+    service: TrendsService = Depends(get_trends_service),
+) -> dict[str, bool | str]:
+    fresh = service.ensure_fresh_snapshot(region=region, period=period)
+    return {"region": region, "period": period, "fresh": fresh}
 
 
 @router.get("/trends/top", response_model=TopTrendsResponse, dependencies=[Depends(verify_api_key)])

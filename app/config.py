@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     sqlite_path: str = Field(default=".data/trends.db")
     cache_ttl_seconds: int = Field(default=600)
 
+    sync_interval_seconds: int = Field(default=21600, description="Background sync interval")
+    max_snapshot_age_seconds: int = Field(default=43200, description="Data freshness threshold")
+
     model_config = SettingsConfigDict(env_prefix="YBT_", env_file=".env", extra="ignore")
 
 

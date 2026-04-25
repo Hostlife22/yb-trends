@@ -1,11 +1,17 @@
-from datetime import datetime, timezone
+from __future__ import annotations
 
+import logging
+from datetime import datetime, timedelta, timezone
+
+from app.config import settings
 from app.db import TrendRepository
 from app.schemas.trends import ClassifiedTrendItem, SummaryResponse, TopTrendsResponse
 from app.services.cache import TTLCache
 from app.services.classifier import TrendClassifier
 from app.services.llm_classifier import GeminiClassifier
 from app.services.providers.base import TrendsProvider
+
+logger = logging.getLogger(__name__)
 
 
 class TrendsService:
@@ -22,20 +28,44 @@ class TrendsService:
         self.cache = cache or TTLCache(ttl_seconds=600)
 
     def sync(self, region: str, period: str) -> int:
+        start = datetime.now(timezone.utc)
         raw_items = self.provider.fetch_weekly_trends(region)
         classified = [self.classifier.classify(item) for item in raw_items]
-        return self.repository.save_snapshot(region=region, period=period, items=classified)
+        saved = self.repository.save_snapshot(region=region, period=period, items=classified)
+        duration_ms = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
+        logger.info(
+            "sync_completed",
+            extra={
+                "region": region,
+                "period": period,
+                "saved": saved,
+                "duration_ms": duration_ms,
+                "provider": type(self.provider).__name__,
+            },
+        )
+        return saved
+
+    def _is_snapshot_fresh(self, region: str, period: str) -> bool:
+        meta = self.repository.fetch_latest_snapshot_meta(region=region, period=period)
+        if meta is None:
+            return False
+        created_at = datetime.fromisoformat(meta.created_at)
+        return created_at >= datetime.now(timezone.utc) - timedelta(seconds=settings.max_snapshot_age_seconds)
+
+    def ensure_fresh_snapshot(self, region: str, period: str) -> bool:
+        if self._is_snapshot_fresh(region=region, period=period):
+            return True
+        self.sync(region=region, period=period)
+        return self._is_snapshot_fresh(region=region, period=period)
 
     def get_top_trends(self, region: str, period: str, limit: int) -> TopTrendsResponse:
         cache_key = f"top:{region}:{period}:{limit}"
         cached = self.cache.get(cache_key)
-        if cached:
+        if cached and self._is_snapshot_fresh(region=region, period=period):
             return cached
 
+        self.ensure_fresh_snapshot(region=region, period=period)
         stored = self.repository.fetch_latest_top(region=region, period=period, limit=limit)
-        if not stored:
-            self.sync(region=region, period=period)
-            stored = self.repository.fetch_latest_top(region=region, period=period, limit=limit)
 
         items = [
             ClassifiedTrendItem(

@@ -22,6 +22,12 @@ class StoredTrend:
     created_at: str
 
 
+@dataclass
+class SnapshotMeta:
+    created_at: str
+    item_count: int
+
+
 class TrendRepository:
     def __init__(self, db_path: str | None = None) -> None:
         path = db_path or settings.sqlite_path
@@ -86,6 +92,24 @@ class TrendRepository:
                     ),
                 )
         return len(items)
+
+    def fetch_latest_snapshot_meta(self, region: str, period: str) -> SnapshotMeta | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT created_at, COUNT(*) AS item_count
+                FROM trend_items
+                WHERE region = ? AND period = ?
+                  AND created_at = (
+                    SELECT MAX(created_at) FROM trend_items WHERE region = ? AND period = ?
+                  )
+                GROUP BY created_at
+                """,
+                (region, period, region, period),
+            ).fetchone()
+            if row is None:
+                return None
+            return SnapshotMeta(created_at=row["created_at"], item_count=row["item_count"])
 
     def fetch_latest_top(self, region: str, period: str, limit: int) -> list[StoredTrend]:
         with self._connect() as conn:

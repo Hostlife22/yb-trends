@@ -26,3 +26,9 @@ def test_repository_save_and_fetch(tmp_path) -> None:
     out = repo.fetch_latest_top(region="US", period="7d", limit=10)
     assert len(out) == 1
     assert out[0].query == "minecraft movie trailer"
+
+
+def test_repository_snapshot_meta(tmp_path) -> None:
+    repo = TrendRepository(db_path=str(tmp_path / "trends.db"))
+    meta = repo.fetch_latest_snapshot_meta(region="US", period="7d")
+    assert meta is None
