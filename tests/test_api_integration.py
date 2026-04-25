@@ -2,6 +2,7 @@ import pytest
 
 fastapi = pytest.importorskip("fastapi")
 pytest.importorskip("pydantic")
+pytest.importorskip("httpx")
 
 from fastapi.testclient import TestClient
 
