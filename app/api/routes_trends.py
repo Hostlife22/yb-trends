@@ -3,7 +3,14 @@ from fastapi import APIRouter, Depends, Query
 from app.api.deps import verify_api_key
 from app.config import settings
 from app.db import TrendRepository
-from app.schemas.trends import SnapshotsResponse, SummaryResponse, TopTrendsResponse, TrendTimeseriesResponse
+from app.schemas.trends import (
+    MetricsResponse,
+    SnapshotsResponse,
+    SummaryResponse,
+    SyncRunsResponse,
+    TopTrendsResponse,
+    TrendTimeseriesResponse,
+)
 from app.services.cache import TTLCache
 from app.services.providers.factory import build_trends_provider
 from app.services.trends_service import TrendsService
@@ -46,6 +53,25 @@ def get_snapshots(
     service: TrendsService = Depends(get_trends_service),
 ) -> SnapshotsResponse:
     return service.get_snapshots(region=region, period=period, limit=limit)
+
+
+@router.get("/admin/sync-runs", response_model=SyncRunsResponse, dependencies=[Depends(verify_api_key)])
+def get_sync_runs(
+    region: str = Query(default=settings.default_region),
+    period: str = Query(default=settings.default_period),
+    limit: int = Query(default=50, ge=1, le=500),
+    service: TrendsService = Depends(get_trends_service),
+) -> SyncRunsResponse:
+    return service.get_sync_runs(region=region, period=period, limit=limit)
+
+
+@router.get("/admin/metrics", response_model=MetricsResponse, dependencies=[Depends(verify_api_key)])
+def get_metrics(
+    region: str = Query(default=settings.default_region),
+    period: str = Query(default=settings.default_period),
+    service: TrendsService = Depends(get_trends_service),
+) -> MetricsResponse:
+    return service.get_metrics(region=region, period=period)
 
 
 @router.get("/trends/{query}/timeseries", response_model=TrendTimeseriesResponse, dependencies=[Depends(verify_api_key)])

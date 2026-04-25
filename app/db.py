@@ -28,6 +28,16 @@ class SnapshotMeta:
     item_count: int
 
 
+@dataclass
+class SyncRun:
+    created_at: str
+    provider: str
+    total_items: int
+    relevant_items: int
+    quality_passed: bool
+    reason: str
+
+
 class TrendRepository:
     def __init__(self, db_path: str | None = None) -> None:
         path = db_path or settings.sqlite_path
@@ -146,6 +156,45 @@ class TrendRepository:
                     datetime.now(timezone.utc).isoformat(),
                 ),
             )
+
+    def fetch_sync_runs(self, region: str, period: str, limit: int = 50) -> list[SyncRun]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT created_at, provider, total_items, relevant_items, quality_passed, reason
+                FROM sync_runs
+                WHERE region = ? AND period = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (region, period, limit),
+            ).fetchall()
+        return [
+            SyncRun(
+                created_at=r["created_at"],
+                provider=r["provider"],
+                total_items=r["total_items"],
+                relevant_items=r["relevant_items"],
+                quality_passed=bool(r["quality_passed"]),
+                reason=r["reason"],
+            )
+            for r in rows
+        ]
+
+    def count_sync_runs_since(self, region: str, period: str, since_iso: str) -> tuple[int, int]:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT COUNT(*) AS total,
+                       SUM(CASE WHEN quality_passed = 0 THEN 1 ELSE 0 END) AS failures
+                FROM sync_runs
+                WHERE region = ? AND period = ? AND created_at >= ?
+                """,
+                (region, period, since_iso),
+            ).fetchone()
+        total = int(row["total"] or 0)
+        failures = int(row["failures"] or 0)
+        return total, failures
 
     def acquire_lock(self, lock_key: str, owner_id: str, ttl_seconds: int) -> bool:
         now = datetime.now(timezone.utc)

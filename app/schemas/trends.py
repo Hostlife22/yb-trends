@@ -57,3 +57,27 @@ class TrendTimeseriesResponse(BaseModel):
     period: str
     query: str
     points: list[TrendPoint]
+
+
+class SyncRunInfo(BaseModel):
+    created_at: datetime
+    provider: str
+    total_items: int
+    relevant_items: int
+    quality_passed: bool
+    reason: str
+
+
+class SyncRunsResponse(BaseModel):
+    region: str
+    period: str
+    runs: list[SyncRunInfo]
+
+
+class MetricsResponse(BaseModel):
+    region: str
+    period: str
+    latest_snapshot_age_seconds: int | None
+    latest_sync_quality_passed: bool | None
+    sync_runs_last_24h: int
+    quality_failures_last_24h: int

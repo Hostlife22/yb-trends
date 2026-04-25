@@ -21,3 +21,9 @@ jobs:
 
       - name: Run tests
         run: pytest -q
+
+      - name: Smoke sync (mock provider)
+        env:
+          YBT_GOOGLE_PROVIDER: mock
+          YBT_SQLITE_PATH: .data/ci-smoke.db
+        run: python -m scripts.run_sync --region US --period 7d

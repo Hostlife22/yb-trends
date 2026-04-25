@@ -6,11 +6,13 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from app.config import settings
-from app.db import SnapshotMeta, TrendRepository
+from app.db import SnapshotMeta, SyncRun, TrendRepository
 from app.schemas.trends import (
     ClassifiedTrendItem,
+    MetricsResponse,
     SnapshotsResponse,
     SummaryResponse,
+    SyncRunsResponse,
     TopTrendsResponse,
     TrendTimeseriesResponse,
 )
@@ -131,6 +133,45 @@ class TrendsService:
             return True
         self.sync(region=region, period=period)
         return self._is_snapshot_fresh(region=region, period=period)
+
+    def get_sync_runs(self, region: str, period: str, limit: int) -> SyncRunsResponse:
+        runs: list[SyncRun] = self.repository.fetch_sync_runs(region=region, period=period, limit=limit)
+        return SyncRunsResponse(
+            region=region,
+            period=period,
+            runs=[
+                {
+                    "created_at": run.created_at,
+                    "provider": run.provider,
+                    "total_items": run.total_items,
+                    "relevant_items": run.relevant_items,
+                    "quality_passed": run.quality_passed,
+                    "reason": run.reason,
+                }
+                for run in runs
+            ],
+        )
+
+    def get_metrics(self, region: str, period: str) -> MetricsResponse:
+        latest_meta = self.repository.fetch_latest_snapshot_meta(region=region, period=period)
+        runs = self.repository.fetch_sync_runs(region=region, period=period, limit=1)
+
+        latest_age: int | None = None
+        if latest_meta is not None:
+            latest_age = int((datetime.now(timezone.utc) - datetime.fromisoformat(latest_meta.created_at)).total_seconds())
+
+        latest_quality = runs[0].quality_passed if runs else None
+        since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+        sync_runs_24h, failures_24h = self.repository.count_sync_runs_since(region=region, period=period, since_iso=since)
+
+        return MetricsResponse(
+            region=region,
+            period=period,
+            latest_snapshot_age_seconds=latest_age,
+            latest_sync_quality_passed=latest_quality,
+            sync_runs_last_24h=sync_runs_24h,
+            quality_failures_last_24h=failures_24h,
+        )
 
     def get_snapshots(self, region: str, period: str, limit: int) -> SnapshotsResponse:
         snapshots: list[SnapshotMeta] = self.repository.fetch_snapshots(region=region, period=period, limit=limit)

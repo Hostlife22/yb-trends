@@ -64,3 +64,25 @@ def test_timeseries_and_snapshots_contract(tmp_path) -> None:
     assert len(snap_payload["snapshots"]) >= 1
     assert "created_at" in snap_payload["snapshots"][0]
     assert "item_count" in snap_payload["snapshots"][0]
+
+
+def test_sync_runs_and_metrics_contract(tmp_path) -> None:
+    _configure_test_settings(tmp_path)
+    client = TestClient(app)
+
+    client.post("/api/v1/admin/sync")
+
+    runs_resp = client.get("/api/v1/admin/sync-runs")
+    assert runs_resp.status_code == 200
+    runs_payload = runs_resp.json()
+    assert isinstance(runs_payload["runs"], list)
+    assert len(runs_payload["runs"]) >= 1
+    assert "quality_passed" in runs_payload["runs"][0]
+    assert "reason" in runs_payload["runs"][0]
+
+    metrics_resp = client.get("/api/v1/admin/metrics")
+    assert metrics_resp.status_code == 200
+    metrics = metrics_resp.json()
+    assert "latest_sync_quality_passed" in metrics
+    assert "sync_runs_last_24h" in metrics
+    assert "quality_failures_last_24h" in metrics
