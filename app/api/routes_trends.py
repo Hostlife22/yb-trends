@@ -4,6 +4,7 @@ from app.api.deps import verify_api_key
 from app.config import settings
 from app.db import TrendRepository
 from app.schemas.trends import (
+    AlertsResponse,
     MetricsResponse,
     SnapshotsResponse,
     SummaryResponse,
@@ -72,6 +73,15 @@ def get_metrics(
     service: TrendsService = Depends(get_trends_service),
 ) -> MetricsResponse:
     return service.get_metrics(region=region, period=period)
+
+
+@router.get("/admin/alerts", response_model=AlertsResponse, dependencies=[Depends(verify_api_key)])
+def get_alerts(
+    region: str = Query(default=settings.default_region),
+    period: str = Query(default=settings.default_period),
+    service: TrendsService = Depends(get_trends_service),
+) -> AlertsResponse:
+    return service.get_alerts(region=region, period=period)
 
 
 @router.get("/trends/{query}/timeseries", response_model=TrendTimeseriesResponse, dependencies=[Depends(verify_api_key)])

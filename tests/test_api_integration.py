@@ -99,3 +99,15 @@ def test_prometheus_metrics_endpoint(tmp_path) -> None:
     assert "yb_sync_runs_total" in body
     assert "yb_quality_failures_total" in body
     assert "yb_latest_snapshot_age_seconds" in body
+
+
+def test_alerts_contract(tmp_path) -> None:
+    _configure_test_settings(tmp_path)
+    client = TestClient(app)
+
+    client.post("/api/v1/admin/sync")
+    resp = client.get("/api/v1/admin/alerts")
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert "alerts" in payload
+    assert isinstance(payload["alerts"], list)

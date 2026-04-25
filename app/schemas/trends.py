@@ -81,3 +81,15 @@ class MetricsResponse(BaseModel):
     latest_sync_quality_passed: bool | None
     sync_runs_last_24h: int
     quality_failures_last_24h: int
+
+
+class AlertItem(BaseModel):
+    code: str
+    severity: Literal["warning", "critical"]
+    message: str
+
+
+class AlertsResponse(BaseModel):
+    region: str
+    period: str
+    alerts: list[AlertItem]

@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     quality_min_items: int = Field(default=5, description="Minimum items required from provider")
     quality_min_relevant_ratio: float = Field(default=0.2, description="Minimum relevant ratio")
 
+    alert_snapshot_age_seconds: int = Field(default=21600, description="Alert threshold for stale snapshot")
+    alert_quality_failures_24h: int = Field(default=3, description="Alert threshold for quality gate failures")
+
     enable_inprocess_scheduler: bool = Field(
         default=False,
         description="Enable in-process scheduler. Keep false in production and use external scheduler.",

@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from app.config import settings
 from app.db import SnapshotMeta, SyncRun, TrendRepository
 from app.schemas.trends import (
+    AlertsResponse,
     ClassifiedTrendItem,
     MetricsResponse,
     SnapshotsResponse,
@@ -172,6 +173,38 @@ class TrendsService:
             sync_runs_last_24h=sync_runs_24h,
             quality_failures_last_24h=failures_24h,
         )
+
+    def get_alerts(self, region: str, period: str) -> AlertsResponse:
+        metrics = self.get_metrics(region=region, period=period)
+        alerts: list[dict[str, str]] = []
+
+        if metrics.latest_snapshot_age_seconds is None:
+            alerts.append(
+                {
+                    "code": "snapshot_missing",
+                    "severity": "critical",
+                    "message": "No snapshots available for selected region/period.",
+                }
+            )
+        elif metrics.latest_snapshot_age_seconds > settings.alert_snapshot_age_seconds:
+            alerts.append(
+                {
+                    "code": "snapshot_stale",
+                    "severity": "warning",
+                    "message": f"Latest snapshot is stale: {metrics.latest_snapshot_age_seconds}s old.",
+                }
+            )
+
+        if metrics.quality_failures_last_24h >= settings.alert_quality_failures_24h:
+            alerts.append(
+                {
+                    "code": "quality_failures_high",
+                    "severity": "critical",
+                    "message": f"Quality failures in last 24h: {metrics.quality_failures_last_24h}.",
+                }
+            )
+
+        return AlertsResponse(region=region, period=period, alerts=alerts)
 
     def get_snapshots(self, region: str, period: str, limit: int) -> SnapshotsResponse:
         snapshots: list[SnapshotMeta] = self.repository.fetch_snapshots(region=region, period=period, limit=limit)
