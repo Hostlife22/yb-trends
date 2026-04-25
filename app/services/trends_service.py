@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from app.config import settings
@@ -21,6 +22,15 @@ from app.services.providers.base import TrendsProvider
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class QualityReport:
+    total_items: int
+    relevant_items: int
+    relevant_ratio: float
+    passed: bool
+    reason: str
+
+
 class TrendsService:
     def __init__(
         self,
@@ -33,6 +43,18 @@ class TrendsService:
         self.repository = repository
         self.classifier = classifier or GeminiClassifier()
         self.cache = cache or TTLCache(ttl_seconds=600)
+
+    def _run_quality_check(self, classified: list[ClassifiedTrendItem]) -> QualityReport:
+        total = len(classified)
+        relevant = len([i for i in classified if i.is_movie_or_animation and i.confidence >= 0.7])
+        ratio = (relevant / total) if total > 0 else 0.0
+
+        if total < settings.quality_min_items:
+            return QualityReport(total, relevant, ratio, False, "total_items_below_threshold")
+        if ratio < settings.quality_min_relevant_ratio:
+            return QualityReport(total, relevant, ratio, False, "relevant_ratio_below_threshold")
+
+        return QualityReport(total, relevant, ratio, True, "ok")
 
     def sync(self, region: str, period: str) -> int:
         owner_id = str(uuid.uuid4())
@@ -48,6 +70,32 @@ class TrendsService:
             raw_items = self.provider.fetch_weekly_trends(region)
             raw_series = {item.query: item.series for item in raw_items}
             classified = [self.classifier.classify(item) for item in raw_items]
+
+            quality = self._run_quality_check(classified)
+            self.repository.record_sync_run(
+                region=region,
+                period=period,
+                provider=type(self.provider).__name__,
+                total_items=quality.total_items,
+                relevant_items=quality.relevant_items,
+                quality_passed=quality.passed,
+                reason=quality.reason,
+            )
+
+            if not quality.passed:
+                logger.warning(
+                    "sync_rejected_by_quality_gate",
+                    extra={
+                        "region": region,
+                        "period": period,
+                        "reason": quality.reason,
+                        "total_items": quality.total_items,
+                        "relevant_items": quality.relevant_items,
+                        "relevant_ratio": quality.relevant_ratio,
+                    },
+                )
+                return 0
+
             saved = self.repository.save_snapshot(
                 region=region,
                 period=period,
@@ -63,6 +111,8 @@ class TrendsService:
                     "saved": saved,
                     "duration_ms": duration_ms,
                     "provider": type(self.provider).__name__,
+                    "quality_reason": quality.reason,
+                    "relevant_ratio": quality.relevant_ratio,
                 },
             )
             return saved

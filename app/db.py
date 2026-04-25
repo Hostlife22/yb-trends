@@ -92,6 +92,22 @@ class TrendRepository:
                     );
                     """,
                 ),
+                (
+                    4,
+                    """
+                    CREATE TABLE IF NOT EXISTS sync_runs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        region TEXT NOT NULL,
+                        period TEXT NOT NULL,
+                        provider TEXT NOT NULL,
+                        total_items INTEGER NOT NULL,
+                        relevant_items INTEGER NOT NULL,
+                        quality_passed INTEGER NOT NULL,
+                        reason TEXT NOT NULL,
+                        created_at TEXT NOT NULL
+                    );
+                    """,
+                ),
             ]
 
             for version, sql in migrations:
@@ -99,6 +115,37 @@ class TrendRepository:
                     continue
                 conn.executescript(sql)
                 conn.execute("INSERT INTO schema_migrations(version) VALUES (?)", (version,))
+
+    def record_sync_run(
+        self,
+        *,
+        region: str,
+        period: str,
+        provider: str,
+        total_items: int,
+        relevant_items: int,
+        quality_passed: bool,
+        reason: str,
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO sync_runs(
+                    region, period, provider, total_items, relevant_items,
+                    quality_passed, reason, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    region,
+                    period,
+                    provider,
+                    total_items,
+                    relevant_items,
+                    1 if quality_passed else 0,
+                    reason,
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
 
     def acquire_lock(self, lock_key: str, owner_id: str, ttl_seconds: int) -> bool:
         now = datetime.now(timezone.utc)
