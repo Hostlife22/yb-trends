@@ -3,10 +3,10 @@ api-install:
 	pip install -r apps/api/requirements.txt
 
 api-run:
-	cd apps/api && uvicorn app.main:app --reload
+	cd apps/api && python3 -m uvicorn app.main:app --reload
 
 api-test:
-	cd apps/api && pytest -q
+	cd apps/api && python3 -m pytest -q
 
 api-sync:
 	cd apps/api && python -m scripts.run_sync --region US --period 7d

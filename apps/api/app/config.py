@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = Field(default=None)
 
     api_key: str | None = Field(default=None, description="Optional API key for protected routes")
+    cors_origins: str = Field(default="http://localhost:3000", description="Comma-separated allowed origins")
     sqlite_path: str = Field(default=".data/trends.db")
     cache_ttl_seconds: int = Field(default=600)
 

@@ -1,10 +1,10 @@
 .PHONY: test sync run
 
 test:
-	pytest -q
+	python3 -m pytest -q
 
 sync:
-	python -m scripts.run_sync --region US --period 7d
+	python3 -m scripts.run_sync --region US --period 7d
 
 run:
-	uvicorn app.main:app --reload
+	python3 -m uvicorn app.main:app --reload

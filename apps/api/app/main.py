@@ -2,6 +2,7 @@ import logging
 from datetime import datetime, timezone
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 
 from app.api.routes_trends import get_trends_service, router as trends_router
@@ -15,6 +16,15 @@ logging.basicConfig(
 )
 
 app = FastAPI(title=settings.app_name)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in settings.cors_origins.split(",")],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(trends_router)
 
 scheduler = SyncScheduler(service=get_trends_service())
