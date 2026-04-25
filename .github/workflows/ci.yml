@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: pytest -q
+
+      - name: Smoke sync (mock provider)
+        env:
+          YBT_GOOGLE_PROVIDER: mock
+          YBT_SQLITE_PATH: .data/ci-smoke.db
+        run: python -m scripts.run_sync --region US --period 7d
