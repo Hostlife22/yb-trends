@@ -1,247 +1,155 @@
-# План реализации: приложение трендов фильмов/мультфильмов (США, за неделю)
+# yb-trends: статус реализации и roadmap
 
-## 1) Цель приложения
-
-Собирать и ранжировать темы/запросы о **фильмах и мультфильмах** в регионе **United States** за **последние 7 дней** и показывать:
-- топ запросов по популярности;
-- динамику интереса (рост/падение);
-- краткие AI-выводы (что именно сейчас «взлетает» и почему это может быть важно).
+Документ фиксирует текущее состояние backend-сервиса и дальнейшие шаги развития.
 
 ---
 
-## 2) Что использовать для данных (Google Trends)
+## 1) Цель проекта
 
-Надёжный путь — использовать не Gemini для получения «сырых» трендов, а отдельный источник трендов:
+Собирать и ранжировать поисковые тренды, связанные с фильмами и анимацией, в регионе **United States** за период **7 days**, чтобы отдавать:
 
-### Вариант A (быстрый MVP): `pytrends`
-- Python-библиотека для доступа к Google Trends.
-- Плюсы: быстро стартовать, бесплатно.
-- Минусы: неофициальный метод, может быть нестабильным (лимиты/блокировки).
-
-### Вариант B (прод): внешний API-провайдер
-- Например, SerpAPI / Apify / DataForSEO (через Google Trends endpoint).
-- Плюсы: стабильнее, SLA, меньше риска блокировок.
-- Минусы: платно.
-
-### Вариант C (гибрид)
-- Основной канал: pytrends;
-- fallback: платный API, если pytrends не ответил или вернул неполные данные.
-
-> Рекомендация: начать с A + сразу заложить интерфейс провайдера, чтобы легко перейти на B.
+- топ трендов;
+- исторический ряд интереса по запросу;
+- краткий summary;
+- operational/админ-диагностику качества синхронизаций.
 
 ---
 
-## 3) Роль Gemini API (или другой LLM)
+## 2) Текущее состояние (уже реализовано)
 
-LLM здесь нужен не для «доставания» Google Trends, а для:
-1. **Классификации** запросов (это фильм/мультфильм/шум).
-2. **Обогащения** (что это за тайтл, жанр, франшиза).
-3. **Краткого аналитического текста** для дашборда.
+### 2.1 API и операционные endpoint’ы
 
-Можно использовать:
-- Gemini API;
-- OpenAI API;
-- любой совместимый LLM.
+Реализованы:
 
----
+- `GET /health`
+- `GET /ready`
+- `GET /metrics` (Prometheus text)
+- `GET /api/v1/trends/top`
+- `GET /api/v1/summary`
+- `GET /api/v1/trends/{query}/timeseries`
+- `POST /api/v1/admin/sync`
+- `GET /api/v1/admin/freshness`
+- `GET /api/v1/admin/snapshots`
+- `GET /api/v1/admin/sync-runs`
+- `GET /api/v1/admin/metrics`
+- `GET /api/v1/admin/alerts`
 
-## 4) Архитектура MVP
+### 2.2 Data pipeline
 
-## Слои
-1. **Collector** — забирает тренды (US, last 7 days).
-2. **Filter & Classifier** — отбирает темы только про фильмы/мультфильмы.
-3. **Scoring** — строит итоговый рейтинг.
-4. **Storage** — сохраняет снапшоты (SQLite/Postgres).
-5. **API** — выдаёт данные фронтенду.
-6. **UI** — таблица + график + AI summary.
+- Провайдерный слой (`mock`, `pytrends`, `managed`) через factory.
+- Классификация: Gemini classifier + эвристический fallback.
+- Quality Gate перед записью snapshot:
+  - `quality_min_items`,
+  - `quality_min_relevant_ratio`.
+- Расчет ranking (`interest_level`, `growth_velocity`, `final_score`).
+- Запись snapshot + timeseries в SQLite.
 
-## Рекомендуемый стек (быстро и надёжно)
-- Backend: Python + FastAPI
-- Jobs: APScheduler/Cron (каждые 6–12 часов)
-- DB: PostgreSQL (или SQLite для локального старта)
-- Frontend: Next.js/React (или пока Streamlit для MVP)
-- LLM: Gemini API (через отдельный сервисный слой)
+### 2.3 Надежность и эксплуатация
 
----
+- Lock/lease в SQLite против конкурентных sync.
+- Запись истории sync запусков с quality-результатом.
+- Freshness-проверка и auto-sync при чтении top.
+- Operational alerts по порогам:
+  - устаревший snapshot,
+  - отсутствие snapshot,
+  - частые quality failures за 24 часа.
+- In-memory TTL cache для top endpoint.
 
-## 5) Логика отбора «фильмов/мультфильмов»
+### 2.4 Инфраструктура
 
-Обычный keyword-фильтр недостаточен. Нужен двухэтапный пайплайн:
-
-### Шаг 1. Быстрый фильтр (правила)
-- словари: `movie`, `film`, `trailer`, `box office`, `pixar`, `disney`, `anime`, и т.д.;
-- исключения: спорт, политика, бренды, если не связаны с тайтлом.
-
-### Шаг 2. LLM-классификация
-Для каждого кандидата LLM возвращает JSON:
-```json
-{
-  "is_movie_or_animation": true,
-  "confidence": 0.0,
-  "title": "...",
-  "content_type": "movie|animation|unknown",
-  "reason": "..."
-}
-```
-Принимать в финал только:
-- `is_movie_or_animation = true`
-- `confidence >= 0.7`
+- CLI sync runner (`python -m scripts.run_sync`).
+- Docker + docker-compose.
+- CI workflow (tests + smoke sync).
+- Набор unit/integration тестов.
 
 ---
 
-## 6) Как считать «самые большие по поиску»
+## 3) Архитектурные решения
 
-Google Trends даёт нормализованные значения, поэтому делаем композитный скор:
+### 3.1 Почему provider abstraction
 
-`final_score = 0.6 * interest_level + 0.4 * growth_velocity`
+Позволяет:
 
-Где:
-- `interest_level` — средний индекс интереса за 7 дней;
-- `growth_velocity` — рост за последние 2 дня относительно первых 2 дней недели.
+- использовать `mock` в тестах и CI;
+- быстро переключиться между `pytrends` и managed API;
+- минимизировать vendor lock-in.
 
-Это позволит не терять «долгие хиты» и одновременно ловить «взрывы».
+### 3.2 Почему quality gate в sync
 
----
+Идея: лучше не публиковать «плохой» snapshot, чем сохранять нерелевантный набор.
 
-## 7) Минимальная схема БД
+При провале gate:
 
-Таблица `trend_items`:
-- `id`
-- `query`
-- `region` (US)
-- `date_from`
-- `date_to`
-- `interest_level`
-- `growth_velocity`
-- `final_score`
-- `is_movie_or_animation`
-- `confidence`
-- `title_normalized`
-- `content_type`
-- `raw_payload` (JSON)
-- `created_at`
+- snapshot не записывается;
+- в `sync_runs` сохраняется причина отказа;
+- `admin/alerts` может сигнализировать о деградации качества.
+
+### 3.3 Почему SQLite на текущем этапе
+
+- минимальные операционные издержки;
+- предсказуемость для MVP/раннего production;
+- простые миграции и репозитории.
+
+При росте нагрузки возможна миграция на Postgres без смены API-контрактов.
 
 ---
 
-## 8) API-контракты
+## 4) Нефункциональные требования (текущее покрытие)
 
-### `GET /api/v1/trends/top?region=US&period=7d&limit=20`
-Возвращает топ трендов по `final_score`.
-
-### `GET /api/v1/trends/{id}`
-Подробности по конкретному элементу + временной ряд.
-
-### `GET /api/v1/summary?region=US&period=7d`
-Короткий AI-summary по рынку.
+- **Наблюдаемость:** базовые метрики + admin-диагностика.
+- **Безопасность:** API key для `/api/v1/*` (опционально).
+- **Тестируемость:** интеграционные и unit тесты ключевых слоев.
+- **Операбельность:** ручной и плановый sync, lock, quality-audit trail.
 
 ---
 
-## 9) План работ по спринтам
+## 5) Roadmap развития
 
-## Спринт 1 (2–3 дня): Data MVP
-- Поднять backend.
-- Интегрировать pytrends или внешний Trends API.
-- Сохранять сырые weekly данные в БД.
-- Сделать endpoint `/top` без AI-классификации.
+### Этап A — стабилизация production-контура
 
-## Спринт 2 (2–4 дня): AI-фильтрация
-- Добавить слой LLM-классификации.
-- Ввести `confidence` и порог.
-- Отладить промпт и JSON-schema валидацию.
+1. Явные SLO/SLI для freshness и sync-success-rate.
+2. Расширение alert-политик (например, провалы provider timeout/error-rate).
+3. Structured logging с correlation id по sync-run.
+4. Ротация/архивация старых snapshot/timeseries.
 
-## Спринт 3 (2–4 дня): UI + аналитика
-- Таблица топов + график динамики.
-- AI summary.
-- Обработка ошибок и fallback на случай лимитов.
+### Этап B — улучшение качества данных
 
-## Спринт 4 (1–2 дня): Прод-готовность
-- Логи/метрики, retries, rate limits.
-- Docker + деплой (Render/Railway/Fly/Cloud Run).
-- Базовые тесты и алерты.
+1. Нормализация title (dedup, alias mapping).
+2. Улучшение prompt/валидации LLM-классификации.
+3. Post-classification rules для edge-cases (sports/person names).
+4. A/B оценка relevance precision/recall на golden-наборе.
 
----
+### Этап C — масштабирование
 
-## 10) Риски и как снизить
+1. Переход на Postgres + индексы под чтение топов/таймсерий.
+2. Вынос scheduler в отдельный worker/queue.
+3. Внешний cache слой (Redis) при росте read-нагрузки.
+4. Мультирегиональность и расширение period (1d/30d/90d).
 
-1. **Лимиты/нестабильность источника Trends**
-   - fallback-провайдер;
-   - кэширование ответов;
-   - повторные попытки с backoff.
+### Этап D — продуктовые возможности
 
-2. **Ошибки классификации LLM**
-   - строгий JSON schema output;
-   - few-shot примеры;
-   - ручная валидация топ-20 на раннем этапе.
-
-3. **Нормализация названий**
-   - словарь синонимов (`Inside Out 2`, `Inside Out Two` и т.д.);
-   - дополнительный этап deduplication.
+1. Более детальный summary (жанры, франшизы, drivers роста).
+2. Экспорт отчетов (CSV/JSON snapshot bundles).
+3. Webhook/notification при срабатывании алертов.
+4. RBAC для admin endpoint’ов.
 
 ---
 
-## 11) Что можно сделать прямо сейчас (пошаговый старт)
+## 6) Критерии готовности следующего релиза
 
-1. Создать backend на FastAPI.
-2. Подключить provider-интерфейс `TrendsProvider`.
-3. Реализовать `PyTrendsProvider`.
-4. Сохранить данные за 7 дней в БД.
-5. Добавить топ endpoint.
-6. Подключить Gemini API для классификации и summary.
-7. Сделать простой фронт (таблица + график).
+- Документация покрывает все env/API/операционные сценарии.
+- Все текущие тесты проходят в CI и локально.
+- Alert endpoint документирован и покрыт контрактным тестом.
+- Smoke sync стабильно выполняется на `mock` provider.
 
 ---
 
-## 12) Пример структуры проекта
+## 7) Рекомендации по эксплуатации
 
-```text
-app/
-  api/
-    trends.py
-    summary.py
-  services/
-    trends_provider.py
-    pytrends_provider.py
-    llm_classifier.py
-    scoring.py
-  db/
-    models.py
-    session.py
-  jobs/
-    sync_trends.py
-  schemas/
-    trends.py
-frontend/
-  pages/
-  components/
-```
-
----
-
-## 13) Рекомендованный prompt для Gemini (классификация)
-
-Системное сообщение:
-- «Ты классификатор поисковых трендов. Верни только валидный JSON по схеме…»
-
-Пользовательское сообщение (пример):
-- query: `<trend_query>`
-- region: `US`
-- period: `last 7 days`
-
-Требования:
-- только JSON;
-- без markdown;
-- `confidence` 0..1;
-- `content_type` только из enum.
-
----
-
-## 14) Критерии готовности MVP
-
-- Ежедневно/по расписанию обновляется топ US трендов.
-- В топе минимум 80% релевантных фильмов/мультфильмов (ручная проверка).
-- API стабильно отвечает < 500 мс на `/top` при прогретом кэше.
-- В интерфейсе есть: топ-20, график, краткий AI-summary.
-
----
-
-Если хотите, следующим шагом могу сразу дать **рабочий каркас FastAPI-проекта** (файлы, модели, endpoints и заглушки под Gemini/pytrends), чтобы вы сразу запустили MVP локально.
+1. В production использовать **внешний scheduler**, а не in-process.
+2. Регулярно мониторить:
+   - `yb_latest_snapshot_age_seconds`,
+   - `quality_failures_last_24h`,
+   - `admin/alerts`.
+3. Для инцидентов сначала смотреть `admin/sync-runs` (reason) и provider-конфиг.
+4. Для безопасного rollout изменений классификации фиксировать метрики качества до/после.
