@@ -39,3 +39,21 @@ class SummaryResponse(BaseModel):
     generated_at: datetime
     summary: str
     top_titles: list[str]
+
+
+class SnapshotInfo(BaseModel):
+    created_at: datetime
+    item_count: int
+
+
+class SnapshotsResponse(BaseModel):
+    region: str
+    period: str
+    snapshots: list[SnapshotInfo]
+
+
+class TrendTimeseriesResponse(BaseModel):
+    region: str
+    period: str
+    query: str
+    points: list[TrendPoint]

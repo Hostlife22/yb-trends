@@ -5,8 +5,14 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from app.config import settings
-from app.db import TrendRepository
-from app.schemas.trends import ClassifiedTrendItem, SummaryResponse, TopTrendsResponse
+from app.db import SnapshotMeta, TrendRepository
+from app.schemas.trends import (
+    ClassifiedTrendItem,
+    SnapshotsResponse,
+    SummaryResponse,
+    TopTrendsResponse,
+    TrendTimeseriesResponse,
+)
 from app.services.cache import TTLCache
 from app.services.classifier import TrendClassifier
 from app.services.llm_classifier import GeminiClassifier
@@ -75,6 +81,18 @@ class TrendsService:
             return True
         self.sync(region=region, period=period)
         return self._is_snapshot_fresh(region=region, period=period)
+
+    def get_snapshots(self, region: str, period: str, limit: int) -> SnapshotsResponse:
+        snapshots: list[SnapshotMeta] = self.repository.fetch_snapshots(region=region, period=period, limit=limit)
+        return SnapshotsResponse(
+            region=region,
+            period=period,
+            snapshots=[{"created_at": s.created_at, "item_count": s.item_count} for s in snapshots],
+        )
+
+    def get_timeseries(self, region: str, period: str, query: str, limit: int) -> TrendTimeseriesResponse:
+        points = self.repository.fetch_timeseries(region=region, period=period, query=query, limit=limit)
+        return TrendTimeseriesResponse(region=region, period=period, query=query, points=points)
 
     def get_top_trends(self, region: str, period: str, limit: int) -> TopTrendsResponse:
         cache_key = f"top:{region}:{period}:{limit}"

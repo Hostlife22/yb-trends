@@ -196,6 +196,35 @@ class TrendRepository:
                 return None
             return SnapshotMeta(created_at=row["created_at"], item_count=row["item_count"])
 
+    def fetch_snapshots(self, region: str, period: str, limit: int = 20) -> list[SnapshotMeta]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT created_at, COUNT(*) AS item_count
+                FROM trend_items
+                WHERE region = ? AND period = ?
+                GROUP BY created_at
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (region, period, limit),
+            ).fetchall()
+        return [SnapshotMeta(created_at=r["created_at"], item_count=r["item_count"]) for r in rows]
+
+    def fetch_timeseries(self, region: str, period: str, query: str, limit: int = 200) -> list[TrendPoint]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT timestamp, interest
+                FROM trend_points
+                WHERE region = ? AND period = ? AND query = ?
+                ORDER BY timestamp ASC
+                LIMIT ?
+                """,
+                (region, period, query, limit),
+            ).fetchall()
+        return [TrendPoint(timestamp=r["timestamp"], interest=r["interest"]) for r in rows]
+
     def fetch_latest_top(self, region: str, period: str, limit: int) -> list[StoredTrend]:
         with self._connect() as conn:
             row = conn.execute(

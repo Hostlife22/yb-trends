@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, Query
 from app.api.deps import verify_api_key
 from app.config import settings
 from app.db import TrendRepository
-from app.schemas.trends import SummaryResponse, TopTrendsResponse
+from app.schemas.trends import SnapshotsResponse, SummaryResponse, TopTrendsResponse, TrendTimeseriesResponse
 from app.services.cache import TTLCache
 from app.services.providers.factory import build_trends_provider
 from app.services.trends_service import TrendsService
@@ -36,6 +36,27 @@ def check_freshness(
 ) -> dict[str, bool | str]:
     fresh = service.ensure_fresh_snapshot(region=region, period=period)
     return {"region": region, "period": period, "fresh": fresh}
+
+
+@router.get("/admin/snapshots", response_model=SnapshotsResponse, dependencies=[Depends(verify_api_key)])
+def get_snapshots(
+    region: str = Query(default=settings.default_region),
+    period: str = Query(default=settings.default_period),
+    limit: int = Query(default=20, ge=1, le=200),
+    service: TrendsService = Depends(get_trends_service),
+) -> SnapshotsResponse:
+    return service.get_snapshots(region=region, period=period, limit=limit)
+
+
+@router.get("/trends/{query}/timeseries", response_model=TrendTimeseriesResponse, dependencies=[Depends(verify_api_key)])
+def get_timeseries(
+    query: str,
+    region: str = Query(default=settings.default_region),
+    period: str = Query(default=settings.default_period),
+    limit: int = Query(default=200, ge=1, le=1000),
+    service: TrendsService = Depends(get_trends_service),
+) -> TrendTimeseriesResponse:
+    return service.get_timeseries(region=region, period=period, query=query, limit=limit)
 
 
 @router.get("/trends/top", response_model=TopTrendsResponse, dependencies=[Depends(verify_api_key)])

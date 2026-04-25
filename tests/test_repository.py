@@ -34,6 +34,10 @@ def test_repository_save_and_fetch(tmp_path) -> None:
     assert len(out) == 1
     assert out[0].query == "minecraft movie trailer"
 
+    points = repo.fetch_timeseries(region="US", period="7d", query="minecraft movie trailer")
+    assert len(points) == 1
+    assert points[0].interest == 10
+
 
 def test_repository_snapshot_meta(tmp_path) -> None:
     repo = TrendRepository(db_path=str(tmp_path / "trends.db"))
