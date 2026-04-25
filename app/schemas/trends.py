@@ -20,6 +20,7 @@ class ClassifiedTrendItem(BaseModel):
     content_type: Literal["movie", "animation", "unknown"]
     is_movie_or_animation: bool
     confidence: float = Field(ge=0.0, le=1.0)
+    studio: str = Field(default="unknown")
     reason: str
     interest_level: float = Field(ge=0.0)
     growth_velocity: float

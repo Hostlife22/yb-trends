@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     default_period: str = "7d"
     default_limit: int = 20
 
-    google_provider: str = Field(default="mock", description="mock|pytrends|managed")
+    google_provider: str = Field(default="mock", description="mock|pytrends|gemini|managed")
     managed_provider_url: str | None = Field(default=None)
     managed_provider_api_key: str | None = Field(default=None)
 

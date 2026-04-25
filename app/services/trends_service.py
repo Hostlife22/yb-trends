@@ -99,11 +99,14 @@ class TrendsService:
                 )
                 return 0
 
+            relevant = [i for i in classified if i.is_movie_or_animation and i.confidence >= 0.7]
+            relevant_series = {q: s for q, s in raw_series.items() if any(i.query == q for i in relevant)}
+
             saved = self.repository.save_snapshot(
                 region=region,
                 period=period,
-                items=classified,
-                raw_series_by_query=raw_series,
+                items=relevant,
+                raw_series_by_query=relevant_series,
             )
             duration_ms = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
             logger.info(
@@ -234,6 +237,7 @@ class TrendsService:
                 content_type=row.content_type,
                 is_movie_or_animation=True,
                 confidence=row.confidence,
+                studio=row.studio,
                 reason="from snapshot",
                 interest_level=row.interest_level,
                 growth_velocity=row.growth_velocity,

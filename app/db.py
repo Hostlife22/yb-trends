@@ -16,6 +16,7 @@ class StoredTrend:
     title_normalized: str
     content_type: str
     confidence: float
+    studio: str
     interest_level: float
     growth_velocity: float
     final_score: float
@@ -116,6 +117,19 @@ class TrendRepository:
                         reason TEXT NOT NULL,
                         created_at TEXT NOT NULL
                     );
+                    """,
+                ),
+                (
+                    5,
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS uix_trend_points_key
+                    ON trend_points (query, region, period, timestamp);
+                    """,
+                ),
+                (
+                    6,
+                    """
+                    ALTER TABLE trend_items ADD COLUMN studio TEXT NOT NULL DEFAULT 'unknown';
                     """,
                 ),
             ]
@@ -255,9 +269,9 @@ class TrendRepository:
                     """
                     INSERT INTO trend_items (
                         query, region, period, title_normalized, content_type,
-                        is_movie_or_animation, confidence, interest_level,
+                        is_movie_or_animation, confidence, studio, interest_level,
                         growth_velocity, final_score, reason, raw_payload, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         item.query,
@@ -267,6 +281,7 @@ class TrendRepository:
                         item.content_type,
                         1 if item.is_movie_or_animation else 0,
                         item.confidence,
+                        item.studio,
                         item.interest_level,
                         item.growth_velocity,
                         item.final_score,
@@ -278,12 +293,16 @@ class TrendRepository:
 
                 if raw_series_by_query and item.query in raw_series_by_query:
                     for point in raw_series_by_query[item.query]:
+                        day = point.timestamp.replace(hour=0, minute=0, second=0, microsecond=0)
                         conn.execute(
                             """
                             INSERT INTO trend_points (query, region, period, timestamp, interest, created_at)
                             VALUES (?, ?, ?, ?, ?, ?)
+                            ON CONFLICT(query, region, period, timestamp) DO UPDATE SET
+                                interest = excluded.interest,
+                                created_at = excluded.created_at
                             """,
-                            (item.query, region, period, point.timestamp.isoformat(), point.interest, now),
+                            (item.query, region, period, day.isoformat(), point.interest, now),
                         )
         return len(items)
 
@@ -346,7 +365,7 @@ class TrendRepository:
             created_at = row["created_at"]
             rows = conn.execute(
                 """
-                SELECT query, title_normalized, content_type, confidence,
+                SELECT query, title_normalized, content_type, confidence, studio,
                        interest_level, growth_velocity, final_score, created_at
                 FROM trend_items
                 WHERE region = ? AND period = ? AND created_at = ? AND is_movie_or_animation = 1
