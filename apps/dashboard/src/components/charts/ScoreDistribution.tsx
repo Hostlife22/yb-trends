@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react';
 import {
   ResponsiveContainer,
   BarChart,
@@ -32,7 +33,19 @@ const tooltipStyle = {
   fontSize: '12px',
 } as const;
 
-export default function ScoreDistribution({ items }: ScoreDistributionProps) {
+function ScoreDistribution({ items }: ScoreDistributionProps) {
+  const topItems = useMemo(
+    () =>
+      [...items]
+        .sort((a, b) => b.final_score - a.final_score)
+        .slice(0, MAX_ITEMS)
+        .map((item) => ({
+          name: truncate(item.title_normalized, TRUNCATE_LENGTH),
+          score: item.final_score,
+        })),
+    [items],
+  );
+
   if (items.length === 0) {
     return (
       <div style={{ height: CHART_HEIGHT }}>
@@ -40,14 +53,6 @@ export default function ScoreDistribution({ items }: ScoreDistributionProps) {
       </div>
     );
   }
-
-  const topItems = [...items]
-    .sort((a, b) => b.final_score - a.final_score)
-    .slice(0, MAX_ITEMS)
-    .map((item) => ({
-      name: truncate(item.title_normalized, TRUNCATE_LENGTH),
-      score: item.final_score,
-    }));
 
   return (
     <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
@@ -78,6 +83,8 @@ export default function ScoreDistribution({ items }: ScoreDistributionProps) {
         />
         <Tooltip
           contentStyle={tooltipStyle}
+          itemStyle={{ color: '#f9fafb' }}
+          labelStyle={{ color: '#f9fafb', fontWeight: 600, marginBottom: 4 }}
           cursor={{ fill: 'rgba(255,255,255,0.04)' }}
           formatter={(value: number) => [value.toFixed(1), 'Score']}
         />
@@ -90,3 +97,5 @@ export default function ScoreDistribution({ items }: ScoreDistributionProps) {
     </ResponsiveContainer>
   );
 }
+
+export default memo(ScoreDistribution);

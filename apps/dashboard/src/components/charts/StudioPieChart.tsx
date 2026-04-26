@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react';
 import {
   ResponsiveContainer,
   PieChart,
@@ -61,7 +62,9 @@ function isAllUnknown(entries: StudioEntry[]): boolean {
   );
 }
 
-export default function StudioPieChart({ items }: StudioPieChartProps) {
+function StudioPieChart({ items }: StudioPieChartProps) {
+  const data = useMemo(() => groupByStudio(items), [items]);
+
   if (items.length === 0) {
     return (
       <div style={{ height: CHART_HEIGHT }}>
@@ -69,8 +72,6 @@ export default function StudioPieChart({ items }: StudioPieChartProps) {
       </div>
     );
   }
-
-  const data = groupByStudio(items);
 
   if (isAllUnknown(data)) {
     return (
@@ -105,6 +106,8 @@ export default function StudioPieChart({ items }: StudioPieChartProps) {
         </Pie>
         <Tooltip
           contentStyle={tooltipStyle}
+          itemStyle={{ color: '#f9fafb' }}
+          labelStyle={{ color: '#f9fafb', fontWeight: 600 }}
           formatter={(value: number, name: string) => [value, name]}
         />
         <Legend
@@ -116,3 +119,5 @@ export default function StudioPieChart({ items }: StudioPieChartProps) {
     </ResponsiveContainer>
   );
 }
+
+export default memo(StudioPieChart);

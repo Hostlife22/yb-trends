@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 import clsx from 'clsx';
 import type { ClassifiedTrendItem } from '@/api/types';
@@ -14,7 +15,7 @@ interface TrendCardProps {
 
 const GROWTH_THRESHOLD = 0;
 
-export default function TrendCard({ item, rank, onClick }: TrendCardProps) {
+function TrendCard({ item, rank, onClick }: TrendCardProps) {
   const isPositiveGrowth = item.growth_velocity > GROWTH_THRESHOLD;
 
   return (
@@ -82,3 +83,5 @@ export default function TrendCard({ item, rank, onClick }: TrendCardProps) {
     </GlassCard>
   );
 }
+
+export default memo(TrendCard);
