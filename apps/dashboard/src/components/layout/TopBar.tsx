@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import StatusDot from '../ui/StatusDot';
-import MobileNav from './MobileNav';
 
 type HealthStatus = 'healthy' | 'warning' | 'critical';
 
@@ -55,9 +54,8 @@ export default function TopBar() {
   };
 
   return (
-    <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-white/10 bg-slate-950/80 px-4 backdrop-blur-xl">
+    <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-white/10 bg-slate-950/80 px-4 pl-16 backdrop-blur-xl md:pl-4">
       <div className="flex items-center gap-3">
-        <MobileNav />
         <h1 className="text-base font-semibold text-white">{title}</h1>
       </div>
 

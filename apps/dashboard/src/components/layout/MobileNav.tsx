@@ -20,7 +20,7 @@ export default function MobileNav() {
         type="button"
         aria-label="Open navigation"
         onClick={() => setOpen(true)}
-        className="flex items-center justify-center rounded-xl p-2 text-gray-400 hover:bg-white/5 hover:text-white transition-colors md:hidden"
+        className="fixed left-3 top-3 z-30 flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-slate-900/80 text-gray-300 backdrop-blur-md hover:bg-white/10 hover:text-white transition-colors md:hidden"
       >
         <Menu size={20} />
       </button>
@@ -28,7 +28,7 @@ export default function MobileNav() {
       {/* Overlay */}
       {open && (
         <div
-          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
+          className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm md:hidden"
           onClick={close}
           aria-hidden="true"
         />
@@ -37,8 +37,8 @@ export default function MobileNav() {
       {/* Slide-in drawer */}
       <aside
         className={clsx(
-          'fixed inset-y-0 left-0 z-50 flex w-64 flex-col gap-1 bg-slate-950/95 backdrop-blur-xl border-r border-white/10 p-4 transition-transform duration-300 ease-in-out md:hidden',
-          open ? 'translate-x-0' : '-translate-x-full',
+          'fixed inset-y-0 left-0 z-[70] flex w-64 flex-col gap-1 bg-slate-950 border-r border-white/10 p-4 shadow-2xl transition-transform duration-300 ease-in-out md:hidden',
+          open ? 'translate-x-0' : '-translate-x-full pointer-events-none',
         )}
       >
         <div className="mb-6 flex items-center justify-between px-2 pt-2">
