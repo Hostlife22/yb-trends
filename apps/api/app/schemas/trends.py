@@ -61,6 +61,7 @@ class TrendTimeseriesResponse(BaseModel):
 
 
 class SyncRunInfo(BaseModel):
+    id: int
     created_at: datetime
     provider: str
     total_items: int

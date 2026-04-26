@@ -6,7 +6,7 @@ export function useHealth() {
   return useQuery<HealthResponse, Error>({
     queryKey: ['health'],
     queryFn: fetchHealth,
-    staleTime: 15_000,
+    staleTime: 30_000,
     refetchInterval: 30_000,
   });
 }

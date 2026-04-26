@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, Query
+from functools import lru_cache
+
+from fastapi import APIRouter, Depends, Path, Query
 
 from app.api.deps import verify_api_key
 from app.config import settings
@@ -19,7 +21,9 @@ from app.services.trends_service import TrendsService
 router = APIRouter(prefix="/api/v1", tags=["trends"])
 
 
+@lru_cache(maxsize=1)
 def get_trends_service() -> TrendsService:
+    """Module-level singleton: provider/repository/cache reused across requests."""
     provider = build_trends_provider()
     repository = TrendRepository()
     cache = TTLCache[TopTrendsResponse](ttl_seconds=settings.cache_ttl_seconds)
@@ -86,7 +90,7 @@ def get_alerts(
 
 @router.get("/trends/{query}/timeseries", response_model=TrendTimeseriesResponse, dependencies=[Depends(verify_api_key)])
 def get_timeseries(
-    query: str,
+    query: str = Path(..., min_length=1, max_length=200),
     region: str = Query(default=settings.default_region),
     period: str = Query(default=settings.default_period),
     limit: int = Query(default=200, ge=1, le=1000),

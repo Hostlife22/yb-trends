@@ -62,6 +62,7 @@ export const alertsResponseSchema = z.object({
 });
 
 export const syncRunInfoSchema = z.object({
+  id: z.number(),
   created_at: z.string(),
   provider: z.string(),
   total_items: z.number(),

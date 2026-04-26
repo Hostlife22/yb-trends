@@ -100,7 +100,8 @@ class TrendsService:
                 return 0
 
             relevant = [i for i in classified if i.is_movie_or_animation and i.confidence >= 0.7]
-            relevant_series = {q: s for q, s in raw_series.items() if any(i.query == q for i in relevant)}
+            relevant_queries = {i.query for i in relevant}
+            relevant_series = {q: s for q, s in raw_series.items() if q in relevant_queries}
 
             saved = self.repository.save_snapshot(
                 region=region,
@@ -108,6 +109,8 @@ class TrendsService:
                 items=relevant,
                 raw_series_by_query=relevant_series,
             )
+            if saved > 0:
+                self.cache.clear()
             duration_ms = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
             logger.info(
                 "sync_completed",
@@ -145,6 +148,7 @@ class TrendsService:
             period=period,
             runs=[
                 {
+                    "id": run.id,
                     "created_at": run.created_at,
                     "provider": run.provider,
                     "total_items": run.total_items,

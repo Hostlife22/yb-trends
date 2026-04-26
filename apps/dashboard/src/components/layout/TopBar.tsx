@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import StatusDot from '../ui/StatusDot';
+import { useHealth } from '@/hooks/use-health';
 
 type HealthStatus = 'healthy' | 'warning' | 'critical';
 
@@ -10,48 +10,27 @@ const ROUTE_TITLES: Record<string, string> = {
   '/admin': 'Admin',
 };
 
+const STATUS_LABELS: Record<HealthStatus, string> = {
+  healthy: 'All systems operational',
+  warning: 'Degraded performance',
+  critical: 'Service unavailable',
+};
+
 function resolveTitle(pathname: string): string {
   return ROUTE_TITLES[pathname] ?? 'Dashboard';
 }
 
-function useHealthStatus() {
-  const [status, setStatus] = useState<HealthStatus>('healthy');
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const check = async () => {
-      try {
-        const res = await fetch('/health', { signal: AbortSignal.timeout(4000) });
-        if (cancelled) return;
-        setStatus(res.ok ? 'healthy' : 'warning');
-      } catch {
-        if (!cancelled) setStatus('critical');
-      }
-    };
-
-    void check();
-    const id = setInterval(() => void check(), 30_000);
-
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, []);
-
-  return status;
+function deriveStatus(isError: boolean, status: string | undefined): HealthStatus {
+  if (isError) return 'critical';
+  if (status === 'ok') return 'healthy';
+  return 'warning';
 }
 
 export default function TopBar() {
   const { pathname } = useLocation();
   const title = resolveTitle(pathname);
-  const healthStatus = useHealthStatus();
-
-  const statusLabel: Record<HealthStatus, string> = {
-    healthy: 'All systems operational',
-    warning: 'Degraded performance',
-    critical: 'Service unavailable',
-  };
+  const { data, isError } = useHealth();
+  const healthStatus = deriveStatus(isError, data?.status);
 
   return (
     <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-white/10 bg-slate-950/80 px-4 pl-16 backdrop-blur-xl md:pl-4">
@@ -62,7 +41,7 @@ export default function TopBar() {
       <div className="flex items-center gap-2">
         <StatusDot status={healthStatus} pulse={healthStatus !== 'healthy'} />
         <span className="hidden text-xs text-gray-400 sm:inline">
-          {statusLabel[healthStatus]}
+          {STATUS_LABELS[healthStatus]}
         </span>
       </div>
     </header>

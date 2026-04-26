@@ -1,4 +1,6 @@
 import logging
+import re
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from fastapi import FastAPI
@@ -15,7 +17,21 @@ logging.basicConfig(
     format='{"level":"%(levelname)s","logger":"%(name)s","message":"%(message)s"}',
 )
 
-app = FastAPI(title=settings.app_name)
+scheduler = SyncScheduler(service=get_trends_service())
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    if settings.enable_inprocess_scheduler:
+        scheduler.start()
+    try:
+        yield
+    finally:
+        if settings.enable_inprocess_scheduler:
+            scheduler.stop()
+
+
+app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -27,19 +43,13 @@ app.add_middleware(
 
 app.include_router(trends_router)
 
-scheduler = SyncScheduler(service=get_trends_service())
+
+_LABEL_SAFE_RE = re.compile(r"[^a-zA-Z0-9_\-]")
 
 
-@app.on_event("startup")
-def on_startup() -> None:
-    if settings.enable_inprocess_scheduler:
-        scheduler.start()
-
-
-@app.on_event("shutdown")
-def on_shutdown() -> None:
-    if settings.enable_inprocess_scheduler:
-        scheduler.stop()
+def _sanitize_label(value: str) -> str:
+    """Restrict Prometheus label values to a safe character set to prevent injection."""
+    return _LABEL_SAFE_RE.sub("_", value)[:64]
 
 
 @app.get("/health")
@@ -57,11 +67,11 @@ def readiness() -> dict[str, bool | str]:
 @app.get("/metrics", response_class=PlainTextResponse)
 def metrics() -> str:
     repo = TrendRepository()
-    region = settings.default_region
-    period = settings.default_period
+    region = _sanitize_label(settings.default_region)
+    period = _sanitize_label(settings.default_period)
 
-    latest = repo.fetch_latest_snapshot_meta(region=region, period=period)
-    total_runs, failures = repo.count_sync_runs_total(region=region, period=period)
+    latest = repo.fetch_latest_snapshot_meta(region=settings.default_region, period=settings.default_period)
+    total_runs, failures = repo.count_sync_runs_total(region=settings.default_region, period=settings.default_period)
 
     latest_age = -1
     if latest is not None:

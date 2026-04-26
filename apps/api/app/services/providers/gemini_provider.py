@@ -65,14 +65,20 @@ class GeminiTrendsProvider(TrendsProvider):
             logger.error("gemini_provider_no_api_key")
             return []
 
-        url = f"{self.GEMINI_URL}?key={api_key}"
         body = json.dumps({
             "contents": [{"parts": [{"text": self.PROMPT.format(region=region)}]}],
             "tools": [{"google_search": {}}],
             "generationConfig": {"temperature": 0.1},
         }).encode()
 
-        req = Request(url, data=body, headers={"Content-Type": "application/json"})
+        req = Request(
+            self.GEMINI_URL,
+            data=body,
+            headers={
+                "Content-Type": "application/json",
+                "x-goog-api-key": api_key,
+            },
+        )
         try:
             with urlopen(req, timeout=30) as resp:
                 data = json.loads(resp.read())

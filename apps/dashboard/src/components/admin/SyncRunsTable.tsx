@@ -68,9 +68,9 @@ export default function SyncRunsTable() {
                 {isLoading ? (
                   <TableSkeletonRows />
                 ) : (
-                  runs.map((run, idx) => (
+                  runs.map((run) => (
                     <tr
-                      key={`${run.created_at}-${idx}`}
+                      key={run.id}
                       className="transition-colors hover:bg-white/5"
                     >
                       <td className="whitespace-nowrap px-6 py-3 text-gray-300">

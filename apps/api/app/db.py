@@ -31,6 +31,7 @@ class SnapshotMeta:
 
 @dataclass
 class SyncRun:
+    id: int
     created_at: str
     provider: str
     total_items: int
@@ -132,6 +133,20 @@ class TrendRepository:
                     ALTER TABLE trend_items ADD COLUMN studio TEXT NOT NULL DEFAULT 'unknown';
                     """,
                 ),
+                (
+                    7,
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_trend_items_lookup
+                    ON trend_items (region, period, created_at DESC);
+                    """,
+                ),
+                (
+                    8,
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_sync_runs_lookup
+                    ON sync_runs (region, period, created_at DESC);
+                    """,
+                ),
             ]
 
             for version, sql in migrations:
@@ -175,7 +190,7 @@ class TrendRepository:
         with self._connect() as conn:
             rows = conn.execute(
                 """
-                SELECT created_at, provider, total_items, relevant_items, quality_passed, reason
+                SELECT id, created_at, provider, total_items, relevant_items, quality_passed, reason
                 FROM sync_runs
                 WHERE region = ? AND period = ?
                 ORDER BY created_at DESC
@@ -185,6 +200,7 @@ class TrendRepository:
             ).fetchall()
         return [
             SyncRun(
+                id=r["id"],
                 created_at=r["created_at"],
                 provider=r["provider"],
                 total_items=r["total_items"],

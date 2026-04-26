@@ -4,16 +4,17 @@ import GlassCard from '@/components/ui/GlassCard';
 import Skeleton from '@/components/ui/Skeleton';
 import StatusDot from '@/components/ui/StatusDot';
 import { formatDuration, formatNumber } from '@/lib/formatters';
-
-const SNAPSHOT_AGE_GREEN_THRESHOLD = 21_600;
-const SNAPSHOT_AGE_AMBER_THRESHOLD = 43_200;
+import {
+  SNAPSHOT_AGE_HEALTHY_SECONDS,
+  SNAPSHOT_AGE_WARNING_SECONDS,
+} from '@/lib/constants';
 
 function resolveSnapshotAgeStatus(
   ageSeconds: number | null,
 ): 'healthy' | 'warning' | 'critical' {
   if (ageSeconds === null) return 'critical';
-  if (ageSeconds < SNAPSHOT_AGE_GREEN_THRESHOLD) return 'healthy';
-  if (ageSeconds < SNAPSHOT_AGE_AMBER_THRESHOLD) return 'warning';
+  if (ageSeconds < SNAPSHOT_AGE_HEALTHY_SECONDS) return 'healthy';
+  if (ageSeconds < SNAPSHOT_AGE_WARNING_SECONDS) return 'warning';
   return 'critical';
 }
 

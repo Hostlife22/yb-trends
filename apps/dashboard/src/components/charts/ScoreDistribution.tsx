@@ -40,6 +40,7 @@ function ScoreDistribution({ items }: ScoreDistributionProps) {
         .sort((a, b) => b.final_score - a.final_score)
         .slice(0, MAX_ITEMS)
         .map((item) => ({
+          id: item.query,
           name: truncate(item.title_normalized, TRUNCATE_LENGTH),
           score: item.final_score,
         })),
@@ -89,8 +90,8 @@ function ScoreDistribution({ items }: ScoreDistributionProps) {
           formatter={(value: number) => [value.toFixed(1), 'Score']}
         />
         <Bar dataKey="score" radius={[0, 4, 4, 0]}>
-          {topItems.map((_, index) => (
-            <Cell key={index} fill={`url(#${GRADIENT_ID})`} />
+          {topItems.map((item) => (
+            <Cell key={item.id} fill={`url(#${GRADIENT_ID})`} />
           ))}
         </Bar>
       </BarChart>

@@ -25,8 +25,8 @@ class Settings(BaseSettings):
     max_snapshot_age_seconds: int = Field(default=43200, description="Data freshness threshold")
     lock_ttl_seconds: int = Field(default=1200, description="Sync lock TTL")
 
-    quality_min_items: int = Field(default=5, description="Minimum items required from provider")
-    quality_min_relevant_ratio: float = Field(default=0.2, description="Minimum relevant ratio")
+    quality_min_items: int = Field(default=5, ge=1, description="Minimum items required from provider")
+    quality_min_relevant_ratio: float = Field(default=0.2, ge=0.0, le=1.0, description="Minimum relevant ratio")
 
     alert_snapshot_age_seconds: int = Field(default=21600, description="Alert threshold for stale snapshot")
     alert_quality_failures_24h: int = Field(default=3, description="Alert threshold for quality gate failures")

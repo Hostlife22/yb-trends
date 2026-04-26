@@ -13,7 +13,12 @@ export function useSync() {
   return useMutation<SyncResponse, Error, SyncVariables>({
     mutationFn: ({ region, period }: SyncVariables) => triggerSync(region, period),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['admin'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'metrics'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'sync-runs'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'snapshots'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'alerts'] });
+      void queryClient.invalidateQueries({ queryKey: ['trends', 'top'] });
+      void queryClient.invalidateQueries({ queryKey: ['summary'] });
     },
   });
 }

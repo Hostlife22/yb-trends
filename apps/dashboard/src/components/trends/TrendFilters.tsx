@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { useForm, Controller } from 'react-hook-form';
+import { useEffect, useRef } from 'react';
+import { useForm, Controller, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import clsx from 'clsx';
@@ -39,20 +39,27 @@ export default function TrendFilters({
   totalCount,
   filteredCount,
 }: TrendFiltersProps) {
-  const { control, watch, register } = useForm<FilterValues>({
+  const { control, register } = useForm<FilterValues>({
     resolver: zodResolver(filterSchema),
     defaultValues: DEFAULT_VALUES,
   });
 
-  const watchedValues = watch();
+  const contentType = useWatch({ control, name: 'contentType' });
+  const studio = useWatch({ control, name: 'studio' });
+  const minScore = useWatch({ control, name: 'minScore' });
+
+  const onFilterChangeRef = useRef(onFilterChange);
+  useEffect(() => {
+    onFilterChangeRef.current = onFilterChange;
+  }, [onFilterChange]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      onFilterChange(watchedValues);
+      onFilterChangeRef.current({ contentType, studio, minScore });
     }, DEBOUNCE_DELAY_MS);
 
     return () => clearTimeout(timer);
-  }, [watchedValues, onFilterChange]);
+  }, [contentType, studio, minScore]);
 
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">

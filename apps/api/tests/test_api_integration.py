@@ -6,6 +6,7 @@ pytest.importorskip("httpx")
 
 from fastapi.testclient import TestClient
 
+from app.api.routes_trends import get_trends_service
 from app.config import settings
 from app.main import app
 
@@ -14,6 +15,7 @@ def _configure_test_settings(tmp_path) -> None:
     settings.google_provider = "mock"
     settings.api_key = None
     settings.sqlite_path = str(tmp_path / "trends.db")
+    get_trends_service.cache_clear()
 
 
 def test_sync_and_top_summary_flow(tmp_path) -> None:

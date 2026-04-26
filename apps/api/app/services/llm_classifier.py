@@ -51,9 +51,12 @@ class GeminiClassifier:
         }
 
         req = Request(
-            f"{self.ENDPOINT}?key={settings.gemini_api_key}",
+            self.ENDPOINT,
             data=json.dumps(body).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                "x-goog-api-key": settings.gemini_api_key,
+            },
             method="POST",
         )
 

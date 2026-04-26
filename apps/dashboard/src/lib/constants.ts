@@ -28,3 +28,7 @@ export const POLL_INTERVALS = {
   syncRuns: 60_000,
   snapshots: 120_000,
 } as const;
+
+// Snapshot age thresholds (mirrors apps/api YBT_ALERT_SNAPSHOT_AGE_SECONDS / YBT_MAX_SNAPSHOT_AGE_SECONDS)
+export const SNAPSHOT_AGE_HEALTHY_SECONDS = 6 * 60 * 60;
+export const SNAPSHOT_AGE_WARNING_SECONDS = 12 * 60 * 60;

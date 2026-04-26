@@ -30,3 +30,6 @@ class TTLCache(Generic[T]):
     def set(self, key: str, value: T) -> None:
         expires_at = datetime.now(timezone.utc) + timedelta(seconds=self.ttl_seconds)
         self._store[key] = CacheEntry(value=value, expires_at=expires_at)
+
+    def clear(self) -> None:
+        self._store.clear()
