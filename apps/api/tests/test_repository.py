@@ -45,6 +45,47 @@ def test_repository_snapshot_meta(tmp_path) -> None:
     assert meta is None
 
 
+def test_repository_persists_tmdb_details(tmp_path) -> None:
+    repo = TrendRepository(db_path=str(tmp_path / "trends.db"))
+    item = ClassifiedTrendItem(
+        query="kpop demon hunters",
+        title_normalized="KPop Demon Hunters",
+        content_type="animation",
+        is_movie_or_animation=True,
+        confidence=0.95,
+        reason="test",
+        interest_level=185.71,
+        growth_velocity=26.1,
+        final_score=0.9,
+        tmdb_id=803796,
+        release_year=2025,
+        original_language="en",
+        tmdb_details={
+            "media_type": "movie",
+            "poster_path": "/poster.jpg",
+            "overview": "Demon-hunting K-pop idols.",
+            "vote_average": 8.1,
+            "vote_count": 2300,
+            "runtime": 99,
+            "release_date": "2025-06-20",
+            "tagline": "Save the world.",
+            "spoken_languages": ["ko", "en"],
+            "production_countries": ["US", "KR"],
+        },
+        # Must satisfy Phase 4 validation
+        youtube_videos_published_14d=10,
+    )
+    repo.save_snapshot(region="US", period="7d", items=[item])
+
+    out = repo.fetch_latest_top(region="US", period="7d", limit=10)
+    assert len(out) == 1
+    assert out[0].tmdb_details is not None
+    assert out[0].tmdb_details["poster_path"] == "/poster.jpg"
+    assert out[0].tmdb_details["overview"].startswith("Demon-hunting")
+    assert out[0].tmdb_details["runtime"] == 99
+    assert out[0].tmdb_details["spoken_languages"] == ["ko", "en"]
+
+
 def test_lock_acquire_release(tmp_path) -> None:
     repo = TrendRepository(db_path=str(tmp_path / "trends.db"))
     assert repo.acquire_lock("sync:US:7d", "owner-a", ttl_seconds=60)

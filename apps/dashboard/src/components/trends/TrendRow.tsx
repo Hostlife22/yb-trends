@@ -35,6 +35,12 @@ export default function TrendRow({ item, rank, onClick }: TrendRowProps) {
         <Badge variant={item.content_type}>{item.content_type}</Badge>
       </td>
       <td className="py-3 px-3 text-sm text-gray-400 whitespace-nowrap">
+        {item.release_year ?? '—'}
+      </td>
+      <td className="py-3 px-3 text-sm text-gray-400 whitespace-nowrap uppercase">
+        {item.original_language ?? '—'}
+      </td>
+      <td className="py-3 px-3 text-sm text-gray-400 whitespace-nowrap">
         {item.studio || '—'}
       </td>
       <td className="py-3 px-3 w-32">
@@ -44,6 +50,14 @@ export default function TrendRow({ item, rank, onClick }: TrendRowProps) {
             {formatScore(item.final_score)}
           </span>
         </div>
+      </td>
+      <td className="py-3 px-3 text-sm text-gray-300 whitespace-nowrap text-right">
+        {item.youtube_total_views_14d
+          ? formatNumber(item.youtube_total_views_14d)
+          : '—'}
+      </td>
+      <td className="py-3 px-3 text-sm text-gray-300 whitespace-nowrap text-right">
+        {item.youtube_videos_published_14d || '—'}
       </td>
       <td className="py-3 px-3 text-sm text-gray-300 whitespace-nowrap text-right">
         {formatNumber(item.interest_level)}

@@ -1,8 +1,7 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { TimeseriesChart } from '@/components/charts';
-import { TrendMeta } from '@/components/trends';
-import Badge from '@/components/ui/Badge';
+import { TrendMeta, TmdbHero, SignalCards } from '@/components/trends';
 import Button from '@/components/ui/Button';
 import Skeleton from '@/components/ui/Skeleton';
 import ErrorBanner from '@/components/ui/ErrorBanner';
@@ -15,11 +14,16 @@ export default function TrendDetailPage() {
   const navigate = useNavigate();
   const query = rawQuery ? decodeURIComponent(rawQuery) : '';
 
-  const { data: timeseriesData, isLoading: tsLoading, error: tsError, refetch: tsRefetch } = useTimeseries(query);
-  const { data: trendsData } = useTopTrends(100);
+  const {
+    data: timeseriesData,
+    isLoading: tsLoading,
+    error: tsError,
+    refetch: tsRefetch,
+  } = useTimeseries(query);
+  const { data: trendsData } = useTopTrends({ limit: 100 });
 
   const item = trendsData?.items.find(
-    (i) => i.query === query || i.title_normalized === query
+    (i) => i.query === query || i.title_normalized === query,
   );
 
   return (
@@ -29,24 +33,14 @@ export default function TrendDetailPage() {
           <ArrowLeft className="mr-1 h-4 w-4" />
           Back
         </Button>
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-100">
-            {item?.title_normalized ?? query}
-          </h1>
-          <div className="mt-1 flex items-center gap-2">
-            {item && (
-              <>
-                <Badge variant={item.content_type === 'movie' ? 'movie' : item.content_type === 'animation' ? 'animation' : 'unknown'}>
-                  {item.content_type}
-                </Badge>
-                {item.studio !== 'unknown' && (
-                  <span className="text-sm text-gray-400">{item.studio}</span>
-                )}
-              </>
-            )}
-          </div>
-        </div>
+        <h1 className="text-2xl font-semibold text-gray-100">
+          {item?.title_normalized ?? query}
+        </h1>
       </div>
+
+      {item && <TmdbHero item={item} />}
+
+      {item && <SignalCards item={item} />}
 
       {item && <TrendMeta item={item} />}
 

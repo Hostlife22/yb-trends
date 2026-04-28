@@ -5,6 +5,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 from app.config import settings
 from app.schemas.trends import ClassifiedTrendItem, TrendPoint
@@ -21,6 +22,21 @@ class StoredTrend:
     growth_velocity: float
     final_score: float
     created_at: str
+    release_year: int | None = None
+    original_language: str | None = None
+    origin_country: str | None = None
+    genres: list[str] | None = None
+    tmdb_id: int | None = None
+    youtube_videos_published_14d: int = 0
+    youtube_total_views_14d: int = 0
+    youtube_median_views_14d: int = 0
+    youtube_top_video_views_14d: int = 0
+    youtube_channels_count_14d: int = 0
+    search_demand: float = 0.0
+    search_momentum: float = 0.0
+    youtube_demand: float = 0.0
+    youtube_freshness: float = 0.0
+    tmdb_details: dict[str, Any] | None = None
 
 
 @dataclass
@@ -145,6 +161,31 @@ class TrendRepository:
                     """
                     CREATE INDEX IF NOT EXISTS idx_sync_runs_lookup
                     ON sync_runs (region, period, created_at DESC);
+                    """,
+                ),
+                (
+                    9,
+                    """
+                    ALTER TABLE trend_items ADD COLUMN release_year INTEGER;
+                    ALTER TABLE trend_items ADD COLUMN original_language TEXT;
+                    ALTER TABLE trend_items ADD COLUMN origin_country TEXT;
+                    ALTER TABLE trend_items ADD COLUMN genres TEXT;
+                    ALTER TABLE trend_items ADD COLUMN tmdb_id INTEGER;
+                    ALTER TABLE trend_items ADD COLUMN youtube_videos_published_14d INTEGER NOT NULL DEFAULT 0;
+                    ALTER TABLE trend_items ADD COLUMN youtube_total_views_14d INTEGER NOT NULL DEFAULT 0;
+                    ALTER TABLE trend_items ADD COLUMN youtube_median_views_14d INTEGER NOT NULL DEFAULT 0;
+                    ALTER TABLE trend_items ADD COLUMN youtube_top_video_views_14d INTEGER NOT NULL DEFAULT 0;
+                    ALTER TABLE trend_items ADD COLUMN youtube_channels_count_14d INTEGER NOT NULL DEFAULT 0;
+                    ALTER TABLE trend_items ADD COLUMN search_demand REAL NOT NULL DEFAULT 0;
+                    ALTER TABLE trend_items ADD COLUMN search_momentum REAL NOT NULL DEFAULT 0;
+                    ALTER TABLE trend_items ADD COLUMN youtube_demand REAL NOT NULL DEFAULT 0;
+                    ALTER TABLE trend_items ADD COLUMN youtube_freshness REAL NOT NULL DEFAULT 0;
+                    """,
+                ),
+                (
+                    10,
+                    """
+                    ALTER TABLE trend_items ADD COLUMN tmdb_details TEXT;
                     """,
                 ),
             ]
@@ -286,8 +327,18 @@ class TrendRepository:
                     INSERT INTO trend_items (
                         query, region, period, title_normalized, content_type,
                         is_movie_or_animation, confidence, studio, interest_level,
-                        growth_velocity, final_score, reason, raw_payload, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        growth_velocity, final_score, reason, raw_payload, created_at,
+                        release_year, original_language, origin_country, genres, tmdb_id,
+                        youtube_videos_published_14d, youtube_total_views_14d,
+                        youtube_median_views_14d, youtube_top_video_views_14d,
+                        youtube_channels_count_14d,
+                        search_demand, search_momentum, youtube_demand, youtube_freshness,
+                        tmdb_details
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                              ?, ?, ?, ?, ?,
+                              ?, ?, ?, ?, ?,
+                              ?, ?, ?, ?,
+                              ?)
                     """,
                     (
                         item.query,
@@ -304,6 +355,21 @@ class TrendRepository:
                         item.reason,
                         json.dumps(item.model_dump(), ensure_ascii=False),
                         now,
+                        item.release_year,
+                        item.original_language,
+                        item.origin_country,
+                        json.dumps(item.genres, ensure_ascii=False),
+                        item.tmdb_id,
+                        item.youtube_videos_published_14d,
+                        item.youtube_total_views_14d,
+                        item.youtube_median_views_14d,
+                        item.youtube_top_video_views_14d,
+                        item.youtube_channels_count_14d,
+                        item.search_demand,
+                        item.search_momentum,
+                        item.youtube_demand,
+                        item.youtube_freshness,
+                        json.dumps(item.tmdb_details, ensure_ascii=False) if item.tmdb_details is not None else None,
                     ),
                 )
 
@@ -369,7 +435,35 @@ class TrendRepository:
             ).fetchall()
         return [TrendPoint(timestamp=r["timestamp"], interest=r["interest"]) for r in rows]
 
-    def fetch_latest_top(self, region: str, period: str, limit: int) -> list[StoredTrend]:
+    # Whitelisted columns for ORDER BY — protects against SQL injection via sort_by.
+    _SORTABLE_COLUMNS = frozenset(
+        {
+            "final_score",
+            "search_demand",
+            "search_momentum",
+            "youtube_demand",
+            "youtube_freshness",
+            "interest_level",
+            "growth_velocity",
+            "youtube_median_views_14d",
+            "youtube_total_views_14d",
+        }
+    )
+
+    def fetch_latest_top(
+        self,
+        region: str,
+        period: str,
+        limit: int,
+        *,
+        language: str | None = None,
+        country: str | None = None,
+        min_year: int | None = None,
+        max_year: int | None = None,
+        sort_by: str = "final_score",
+    ) -> list[StoredTrend]:
+        order_column = sort_by if sort_by in self._SORTABLE_COLUMNS else "final_score"
+
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT MAX(created_at) AS created_at FROM trend_items WHERE region = ? AND period = ?",
@@ -379,16 +473,87 @@ class TrendRepository:
                 return []
 
             created_at = row["created_at"]
-            rows = conn.execute(
-                """
-                SELECT query, title_normalized, content_type, confidence, studio,
-                       interest_level, growth_velocity, final_score, created_at
-                FROM trend_items
-                WHERE region = ? AND period = ? AND created_at = ? AND is_movie_or_animation = 1
-                ORDER BY final_score DESC
-                LIMIT ?
-                """,
-                (region, period, created_at, limit),
-            ).fetchall()
+            where_parts = ["region = ?", "period = ?", "created_at = ?", "is_movie_or_animation = 1"]
+            params: list[Any] = [region, period, created_at]
 
-        return [StoredTrend(**dict(r)) for r in rows]
+            if language:
+                where_parts.append("LOWER(original_language) = ?")
+                params.append(language.lower())
+            if country:
+                where_parts.append("UPPER(origin_country) = ?")
+                params.append(country.upper())
+            if min_year is not None:
+                where_parts.append("release_year >= ?")
+                params.append(min_year)
+            if max_year is not None:
+                where_parts.append("release_year <= ?")
+                params.append(max_year)
+
+            params.append(limit)
+            sql = f"""
+                SELECT query, title_normalized, content_type, confidence, studio,
+                       interest_level, growth_velocity, final_score, created_at,
+                       release_year, original_language, origin_country, genres, tmdb_id,
+                       youtube_videos_published_14d, youtube_total_views_14d,
+                       youtube_median_views_14d, youtube_top_video_views_14d,
+                       youtube_channels_count_14d,
+                       search_demand, search_momentum, youtube_demand, youtube_freshness,
+                       tmdb_details
+                FROM trend_items
+                WHERE {' AND '.join(where_parts)}
+                ORDER BY {order_column} DESC
+                LIMIT ?
+            """
+            rows = conn.execute(sql, params).fetchall()
+
+        return [_row_to_stored_trend(r) for r in rows]
+
+
+def _row_to_stored_trend(row: sqlite3.Row) -> StoredTrend:
+    keys = set(row.keys())
+    raw_genres = row["genres"] if "genres" in keys else None
+    try:
+        genres: list[str] | None = json.loads(raw_genres) if raw_genres else None
+    except (TypeError, json.JSONDecodeError):
+        genres = None
+
+    raw_tmdb = row["tmdb_details"] if "tmdb_details" in keys else None
+    try:
+        tmdb_details: dict[str, Any] | None = json.loads(raw_tmdb) if raw_tmdb else None
+        if tmdb_details is not None and not isinstance(tmdb_details, dict):
+            tmdb_details = None
+    except (TypeError, json.JSONDecodeError):
+        tmdb_details = None
+
+    def opt_int(name: str) -> int:
+        return int(row[name]) if name in keys and row[name] is not None else 0
+
+    def opt_float(name: str) -> float:
+        return float(row[name]) if name in keys and row[name] is not None else 0.0
+
+    return StoredTrend(
+        query=row["query"],
+        title_normalized=row["title_normalized"],
+        content_type=row["content_type"],
+        confidence=row["confidence"],
+        studio=row["studio"],
+        interest_level=row["interest_level"],
+        growth_velocity=row["growth_velocity"],
+        final_score=row["final_score"],
+        created_at=row["created_at"],
+        release_year=row["release_year"] if "release_year" in keys else None,
+        original_language=row["original_language"] if "original_language" in keys else None,
+        origin_country=row["origin_country"] if "origin_country" in keys else None,
+        genres=genres,
+        tmdb_id=row["tmdb_id"] if "tmdb_id" in keys else None,
+        youtube_videos_published_14d=opt_int("youtube_videos_published_14d"),
+        youtube_total_views_14d=opt_int("youtube_total_views_14d"),
+        youtube_median_views_14d=opt_int("youtube_median_views_14d"),
+        youtube_top_video_views_14d=opt_int("youtube_top_video_views_14d"),
+        youtube_channels_count_14d=opt_int("youtube_channels_count_14d"),
+        search_demand=opt_float("search_demand"),
+        search_momentum=opt_float("search_momentum"),
+        youtube_demand=opt_float("youtube_demand"),
+        youtube_freshness=opt_float("youtube_freshness"),
+        tmdb_details=tmdb_details,
+    )

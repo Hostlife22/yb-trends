@@ -13,9 +13,33 @@ from app.main import app
 
 def _configure_test_settings(tmp_path) -> None:
     settings.google_provider = "mock"
+    # Force noop enrichers so integration tests stay offline. Phase 4
+    # validation requires a YouTube signal — we provide one by overriding
+    # the service after the factory builds it (see _force_offline_enrichers).
+    settings.metadata_provider = "noop"
+    settings.youtube_stats_provider = "noop"
     settings.api_key = None
     settings.sqlite_path = str(tmp_path / "trends.db")
     get_trends_service.cache_clear()
+    _force_offline_enrichers()
+
+
+def _force_offline_enrichers() -> None:
+    """Replace the cached service's YouTube enricher with one that emits a
+    constant signal, so the validation filter doesn't reject every item.
+
+    This keeps the integration tests fully offline while still exercising the
+    Phase 4 pipeline end-to-end.
+    """
+    from app.services.enrichers.base import YouTubeStatsEnricher
+    from app.services.scoring import YouTubeStats
+
+    class _ConstantYouTube(YouTubeStatsEnricher):
+        def fetch_stats(self, query, *, region, lookback_days=14):  # type: ignore[override]
+            return YouTubeStats(videos_published=3, total_views=900, median_views=300, channels_count=2)
+
+    service = get_trends_service()
+    service.youtube_stats_enricher = _ConstantYouTube()
 
 
 def test_sync_and_top_summary_flow(tmp_path) -> None:

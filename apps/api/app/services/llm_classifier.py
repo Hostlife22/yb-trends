@@ -19,10 +19,16 @@ class GeminiClassifier:
     Falls back to `TrendClassifier` when API key is missing or provider fails.
     """
 
-    ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+    ENDPOINT_TEMPLATE = (
+        "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    )
 
     def __init__(self) -> None:
         self._fallback = TrendClassifier()
+
+    @property
+    def endpoint(self) -> str:
+        return self.ENDPOINT_TEMPLATE.format(model=settings.gemini_model)
 
     def classify(self, item: RawTrendItem) -> ClassifiedTrendItem:
         if not settings.gemini_api_key:
@@ -51,7 +57,7 @@ class GeminiClassifier:
         }
 
         req = Request(
-            self.ENDPOINT,
+            self.endpoint,
             data=json.dumps(body).encode("utf-8"),
             headers={
                 "Content-Type": "application/json",

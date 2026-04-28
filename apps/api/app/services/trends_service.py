@@ -19,8 +19,22 @@ from app.schemas.trends import (
 )
 from app.services.cache import TTLCache
 from app.services.classifier import TrendClassifier
+from app.services.enrichers import (
+    MetadataEnricher,
+    YouTubeStatsEnricher,
+    build_metadata_enricher,
+    build_youtube_stats_enricher,
+)
 from app.services.llm_classifier import GeminiClassifier
 from app.services.providers.base import TrendsProvider
+from app.services.scoring import (
+    ScoreWeights,
+    compute_search_demand,
+    compute_search_momentum,
+    compute_weighted_final_score,
+    compute_youtube_demand,
+    compute_youtube_freshness,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,11 +55,79 @@ class TrendsService:
         repository: TrendRepository,
         classifier: TrendClassifier | GeminiClassifier | None = None,
         cache: TTLCache[TopTrendsResponse] | None = None,
+        metadata_enricher: MetadataEnricher | None = None,
+        youtube_stats_enricher: YouTubeStatsEnricher | None = None,
     ) -> None:
         self.provider = provider
         self.repository = repository
         self.classifier = classifier or GeminiClassifier()
         self.cache = cache or TTLCache(ttl_seconds=600)
+        self.metadata_enricher = metadata_enricher or build_metadata_enricher()
+        self.youtube_stats_enricher = youtube_stats_enricher or build_youtube_stats_enricher()
+
+    def _score_weights(self) -> ScoreWeights:
+        return ScoreWeights(
+            search_demand=settings.score_weight_search_demand,
+            search_momentum=settings.score_weight_search_momentum,
+            youtube_demand=settings.score_weight_youtube_demand,
+            youtube_freshness=settings.score_weight_youtube_freshness,
+        )
+
+    def _enrich(self, item: ClassifiedTrendItem, *, region: str) -> ClassifiedTrendItem:
+        """Run enrichers + recompute sub-scores and final_score.
+
+        Returns a new ClassifiedTrendItem (pydantic ``model_copy``) — never
+        mutates the input. Errors from any enricher must NOT abort the whole
+        sync; we degrade gracefully to zeroed signals for that one item.
+        """
+        try:
+            metadata = self.metadata_enricher.enrich(item.title_normalized, region=region)
+        except Exception:  # noqa: BLE001 — defensive boundary against misbehaving enrichers
+            logger.exception("metadata_enricher_failed", extra={"query": item.query})
+            from app.services.enrichers import MovieMetadata
+
+            metadata = MovieMetadata()
+
+        try:
+            yt_stats = self.youtube_stats_enricher.fetch_stats(item.query, region=region)
+        except Exception:  # noqa: BLE001
+            logger.exception("youtube_stats_enricher_failed", extra={"query": item.query})
+            from app.services.scoring import YouTubeStats
+
+            yt_stats = YouTubeStats()
+
+        search_demand = compute_search_demand(item.interest_level)
+        search_momentum = compute_search_momentum(item.growth_velocity)
+        youtube_demand = compute_youtube_demand(yt_stats)
+        youtube_freshness = compute_youtube_freshness(yt_stats)
+        final_score = compute_weighted_final_score(
+            search_demand=search_demand,
+            search_momentum=search_momentum,
+            youtube_demand=youtube_demand,
+            youtube_freshness=youtube_freshness,
+            weights=self._score_weights(),
+        )
+
+        return item.model_copy(
+            update={
+                "release_year": metadata.release_year,
+                "original_language": metadata.original_language,
+                "origin_country": metadata.origin_country,
+                "genres": list(metadata.genres),
+                "tmdb_id": metadata.tmdb_id,
+                "tmdb_details": metadata.tmdb_details,
+                "youtube_videos_published_14d": yt_stats.videos_published,
+                "youtube_total_views_14d": yt_stats.total_views,
+                "youtube_median_views_14d": yt_stats.median_views,
+                "youtube_top_video_views_14d": yt_stats.top_video_views,
+                "youtube_channels_count_14d": yt_stats.channels_count,
+                "search_demand": round(search_demand, 4),
+                "search_momentum": round(search_momentum, 4),
+                "youtube_demand": round(youtube_demand, 4),
+                "youtube_freshness": round(youtube_freshness, 4),
+                "final_score": round(final_score, 4),
+            }
+        )
 
     def _run_quality_check(self, classified: list[ClassifiedTrendItem]) -> QualityReport:
         total = len(classified)
@@ -100,13 +182,35 @@ class TrendsService:
                 return 0
 
             relevant = [i for i in classified if i.is_movie_or_animation and i.confidence >= 0.7]
-            relevant_queries = {i.query for i in relevant}
+            enriched_all = [self._enrich(i, region=region) for i in relevant]
+
+            # Phase 4 validation: only persist items the enrichers were able to
+            # corroborate. An item with neither a TMDB match nor a non-zero
+            # YouTube signal is almost certainly a classifier hallucination or
+            # an off-topic query that slipped through.
+            validated = [
+                i for i in enriched_all
+                if i.tmdb_id is not None or i.youtube_videos_published_14d > 0
+            ]
+            dropped_count = len(enriched_all) - len(validated)
+            if dropped_count > 0:
+                logger.info(
+                    "validation_filter_dropped_items",
+                    extra={
+                        "region": region,
+                        "period": period,
+                        "dropped": dropped_count,
+                        "kept": len(validated),
+                    },
+                )
+
+            relevant_queries = {i.query for i in validated}
             relevant_series = {q: s for q, s in raw_series.items() if q in relevant_queries}
 
             saved = self.repository.save_snapshot(
                 region=region,
                 period=period,
-                items=relevant,
+                items=validated,
                 raw_series_by_query=relevant_series,
             )
             if saved > 0:
@@ -225,14 +329,38 @@ class TrendsService:
         points = self.repository.fetch_timeseries(region=region, period=period, query=query, limit=limit)
         return TrendTimeseriesResponse(region=region, period=period, query=query, points=points)
 
-    def get_top_trends(self, region: str, period: str, limit: int) -> TopTrendsResponse:
-        cache_key = f"top:{region}:{period}:{limit}"
+    def get_top_trends(
+        self,
+        region: str,
+        period: str,
+        limit: int,
+        *,
+        language: str | None = None,
+        country: str | None = None,
+        min_year: int | None = None,
+        max_year: int | None = None,
+        sort_by: str = "final_score",
+    ) -> TopTrendsResponse:
+        cache_key = (
+            f"top:{region}:{period}:{limit}:"
+            f"{(language or '').lower()}:{(country or '').upper()}:"
+            f"{min_year or ''}:{max_year or ''}:{sort_by}"
+        )
         cached = self.cache.get(cache_key)
         if cached and self._is_snapshot_fresh(region=region, period=period):
             return cached
 
         self.ensure_fresh_snapshot(region=region, period=period)
-        stored = self.repository.fetch_latest_top(region=region, period=period, limit=limit)
+        stored = self.repository.fetch_latest_top(
+            region=region,
+            period=period,
+            limit=limit,
+            language=language,
+            country=country,
+            min_year=min_year,
+            max_year=max_year,
+            sort_by=sort_by,
+        )
 
         items = [
             ClassifiedTrendItem(
@@ -246,6 +374,21 @@ class TrendsService:
                 interest_level=row.interest_level,
                 growth_velocity=row.growth_velocity,
                 final_score=row.final_score,
+                release_year=row.release_year,
+                original_language=row.original_language,
+                origin_country=row.origin_country,
+                genres=row.genres or [],
+                tmdb_id=row.tmdb_id,
+                youtube_videos_published_14d=row.youtube_videos_published_14d,
+                youtube_total_views_14d=row.youtube_total_views_14d,
+                youtube_median_views_14d=row.youtube_median_views_14d,
+                youtube_top_video_views_14d=row.youtube_top_video_views_14d,
+                youtube_channels_count_14d=row.youtube_channels_count_14d,
+                search_demand=row.search_demand,
+                search_momentum=row.search_momentum,
+                youtube_demand=row.youtube_demand,
+                youtube_freshness=row.youtube_freshness,
+                tmdb_details=row.tmdb_details,
             )
             for row in stored
             if row.confidence >= 0.7
@@ -257,7 +400,12 @@ class TrendsService:
             generated_at=datetime.now(timezone.utc),
             items=items,
         )
-        self.cache.set(cache_key, response)
+        # Don't cache empty responses — otherwise a transient empty state
+        # (e.g. fresh deploy before first sync, or sync that lost a race
+        # with provider quota) sticks for the full TTL even after the DB
+        # has been populated.
+        if items:
+            self.cache.set(cache_key, response)
         return response
 
     def get_summary(self, region: str, period: str, limit: int) -> SummaryResponse:

@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from datetime import datetime, timedelta, timezone
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from app.config import settings
@@ -13,6 +14,11 @@ from app.services.providers.base import TrendsProvider
 
 logger = logging.getLogger(__name__)
 
+# Retry transient errors (rate-limit + 5xx). 429 is by far the most common
+# in practice on free-tier keys.
+_RETRY_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
+_MAX_RETRIES = 2  # total attempts = 1 + _MAX_RETRIES
+
 _JSON_BLOCK_RE = re.compile(r"```json\s*(.*?)\s*```", re.DOTALL)
 
 
@@ -20,10 +26,14 @@ class GeminiTrendsProvider(TrendsProvider):
     """Discovers trending movies/animations via Gemini with Google Search grounding,
     then builds synthetic 7-day interest curves from Google Trends RSS traffic data."""
 
-    GEMINI_URL = (
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+    GEMINI_URL_TEMPLATE = (
+        "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     )
     RSS_URL = "https://trends.google.com/trending/rss?geo={region}"
+
+    @property
+    def gemini_url(self) -> str:
+        return self.GEMINI_URL_TEMPLATE.format(model=settings.gemini_model)
 
     PROMPT = (
         "Return a JSON array of up to 20 movies and animated films that are currently "
@@ -72,18 +82,16 @@ class GeminiTrendsProvider(TrendsProvider):
         }).encode()
 
         req = Request(
-            self.GEMINI_URL,
+            self.gemini_url,
             data=body,
             headers={
                 "Content-Type": "application/json",
                 "x-goog-api-key": api_key,
             },
         )
-        try:
-            with urlopen(req, timeout=30) as resp:
-                data = json.loads(resp.read())
-        except (URLError, TimeoutError) as exc:
-            logger.error("gemini_provider_request_failed", extra={"error": str(exc)})
+
+        data = self._post_with_retry(req)
+        if data is None:
             return []
 
         text = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
@@ -98,6 +106,46 @@ class GeminiTrendsProvider(TrendsProvider):
             return []
 
         return titles if isinstance(titles, list) else []
+
+    def _post_with_retry(self, req: Request) -> dict | None:
+        """POST with exponential backoff on 429/5xx.
+
+        Logs the actual HTTP status and a snippet of the error body so failures
+        are diagnosable without re-running with breakpoints. Returns parsed
+        JSON or None on terminal failure.
+        """
+        last_error: str | None = None
+        for attempt in range(_MAX_RETRIES + 1):
+            try:
+                with urlopen(req, timeout=30) as resp:
+                    return json.loads(resp.read())
+            except HTTPError as exc:
+                body_snippet = ""
+                try:
+                    body_snippet = exc.read().decode("utf-8", errors="replace")[:300]
+                except Exception:  # noqa: BLE001
+                    pass
+                last_error = f"HTTP {exc.code} {exc.reason}: {body_snippet}"
+                if exc.code not in _RETRY_STATUS_CODES or attempt == _MAX_RETRIES:
+                    logger.error(
+                        "gemini_provider_request_failed",
+                        extra={"status": exc.code, "reason": exc.reason, "body": body_snippet},
+                    )
+                    return None
+            except (URLError, TimeoutError) as exc:
+                last_error = f"network: {exc}"
+                if attempt == _MAX_RETRIES:
+                    logger.error("gemini_provider_request_failed", extra={"error": str(exc)})
+                    return None
+
+            backoff_seconds = 2 ** attempt
+            logger.warning(
+                "gemini_provider_retrying",
+                extra={"attempt": attempt + 1, "delay_seconds": backoff_seconds, "last_error": last_error},
+            )
+            time.sleep(backoff_seconds)
+
+        return None
 
     def _fetch_rss_traffic(self, region: str) -> dict[str, float]:
         """Fetch current RSS traffic as a rough popularity baseline."""

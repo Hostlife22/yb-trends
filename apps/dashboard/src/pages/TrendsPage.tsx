@@ -11,11 +11,27 @@ const DEFAULT_FILTERS: FilterValues = {
   contentType: 'all',
   studio: '',
   minScore: 0,
+  language: '',
+  country: '',
+  minYear: null,
+  maxYear: null,
+  sortBy: 'final_score',
 };
 
 export default function TrendsPage() {
-  const { data, isLoading, error, refetch } = useTopTrends(100);
   const [filters, setFilters] = useState<FilterValues>(DEFAULT_FILTERS);
+
+  // Server-side filters: language/country/year/sortBy go to the API. Client-side
+  // filters (contentType, studio substring, minScore) refine the response in the
+  // browser since they don't map cleanly to a single SQL column.
+  const { data, isLoading, error, refetch } = useTopTrends({
+    limit: 100,
+    language: filters.language || null,
+    country: filters.country || null,
+    minYear: filters.minYear,
+    maxYear: filters.maxYear,
+    sortBy: filters.sortBy,
+  });
 
   const items = data?.items ?? [];
 

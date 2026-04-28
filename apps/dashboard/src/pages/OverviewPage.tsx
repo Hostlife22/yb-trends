@@ -52,7 +52,7 @@ function TopTrendsGrid({
 
 export default function OverviewPage() {
   const navigate = useNavigate();
-  const { data, isLoading, error, refetch } = useTopTrends(20);
+  const { data, isLoading, error, refetch } = useTopTrends({ limit: 20 });
 
   const items = data?.items;
   const topFive = useMemo(() => items?.slice(0, 5) ?? [], [items]);

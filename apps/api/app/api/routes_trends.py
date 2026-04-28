@@ -99,14 +99,43 @@ def get_timeseries(
     return service.get_timeseries(region=region, period=period, query=query, limit=limit)
 
 
+_ALLOWED_SORT_BY = {
+    "final_score",
+    "search_demand",
+    "search_momentum",
+    "youtube_demand",
+    "youtube_freshness",
+    "interest_level",
+    "growth_velocity",
+    "youtube_median_views_14d",
+    "youtube_total_views_14d",
+}
+
+
 @router.get("/trends/top", response_model=TopTrendsResponse, dependencies=[Depends(verify_api_key)])
 def get_top_trends(
     region: str = Query(default=settings.default_region),
     period: str = Query(default=settings.default_period),
     limit: int = Query(default=settings.default_limit, ge=1, le=100),
+    language: str | None = Query(default=None, min_length=2, max_length=5, description="ISO 639-1, e.g. en, es, ja"),
+    country: str | None = Query(default=None, min_length=2, max_length=2, description="ISO 3166-1 alpha-2, e.g. US, JP"),
+    min_year: int | None = Query(default=None, ge=1900, le=2100),
+    max_year: int | None = Query(default=None, ge=1900, le=2100),
+    sort_by: str = Query(default="final_score"),
     service: TrendsService = Depends(get_trends_service),
 ) -> TopTrendsResponse:
-    return service.get_top_trends(region=region, period=period, limit=limit)
+    if sort_by not in _ALLOWED_SORT_BY:
+        sort_by = "final_score"
+    return service.get_top_trends(
+        region=region,
+        period=period,
+        limit=limit,
+        language=language,
+        country=country,
+        min_year=min_year,
+        max_year=max_year,
+        sort_by=sort_by,
+    )
 
 
 @router.get("/summary", response_model=SummaryResponse, dependencies=[Depends(verify_api_key)])

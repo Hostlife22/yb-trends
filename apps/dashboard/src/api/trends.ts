@@ -10,9 +10,42 @@ import type {
   TrendTimeseriesResponse,
 } from './types';
 
-export async function fetchTopTrends(limit?: number): Promise<TopTrendsResponse> {
-  const params = limit !== undefined ? `?limit=${limit}` : '';
-  const raw = await apiGet<unknown>(`/api/v1/trends/top${params}`);
+export type TopTrendsFilters = {
+  limit?: number;
+  language?: string | null;
+  country?: string | null;
+  minYear?: number | null;
+  maxYear?: number | null;
+  sortBy?: TopTrendsSort;
+};
+
+export type TopTrendsSort =
+  | 'final_score'
+  | 'search_demand'
+  | 'search_momentum'
+  | 'youtube_demand'
+  | 'youtube_freshness'
+  | 'youtube_median_views_14d'
+  | 'youtube_total_views_14d';
+
+export async function fetchTopTrends(
+  filters: TopTrendsFilters = {},
+): Promise<TopTrendsResponse> {
+  const search = new URLSearchParams();
+  if (filters.limit !== undefined) search.set('limit', String(filters.limit));
+  if (filters.language) search.set('language', filters.language);
+  if (filters.country) search.set('country', filters.country);
+  if (filters.minYear !== undefined && filters.minYear !== null) {
+    search.set('min_year', String(filters.minYear));
+  }
+  if (filters.maxYear !== undefined && filters.maxYear !== null) {
+    search.set('max_year', String(filters.maxYear));
+  }
+  if (filters.sortBy) search.set('sort_by', filters.sortBy);
+
+  const qs = search.toString();
+  const url = qs ? `/api/v1/trends/top?${qs}` : '/api/v1/trends/top';
+  const raw = await apiGet<unknown>(url);
   return topTrendsResponseSchema.parse(raw);
 }
 

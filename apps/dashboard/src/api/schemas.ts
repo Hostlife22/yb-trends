@@ -16,6 +16,29 @@ export const classifiedTrendItemSchema = z.object({
   interest_level: z.number(),
   growth_velocity: z.number(),
   final_score: z.number(),
+
+  // TMDB metadata (Phase 2)
+  release_year: z.number().nullable().optional(),
+  original_language: z.string().nullable().optional(),
+  origin_country: z.string().nullable().optional(),
+  genres: z.array(z.string()).optional().default([]),
+  tmdb_id: z.number().nullable().optional(),
+
+  // YouTube stats (Phase 3)
+  youtube_videos_published_14d: z.number().optional().default(0),
+  youtube_total_views_14d: z.number().optional().default(0),
+  youtube_median_views_14d: z.number().optional().default(0),
+  youtube_top_video_views_14d: z.number().optional().default(0),
+  youtube_channels_count_14d: z.number().optional().default(0),
+
+  // Composite sub-scores (Phase 1)
+  search_demand: z.number().optional().default(0),
+  search_momentum: z.number().optional().default(0),
+  youtube_demand: z.number().optional().default(0),
+  youtube_freshness: z.number().optional().default(0),
+
+  // TMDB rich payload (poster, overview, vote_average, runtime, ...)
+  tmdb_details: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 
 export const topTrendsResponseSchema = z.object({
